@@ -8,6 +8,7 @@ from typing import Optional
 
 import spacy
 
+from src.field_patterns import PARTY_ROLE_SYNONYMS, compile_patterns
 from src.models.schema import Party, SourceRef
 
 # ---------------------------------------------------------------------------
@@ -25,46 +26,21 @@ def _get_nlp() -> spacy.language.Language:
 
 
 # ---------------------------------------------------------------------------
-# Role-detection regex patterns
+# Role-detection regex patterns — built from centralized PARTY_ROLE_SYNONYMS
 # ---------------------------------------------------------------------------
 
-_ROLE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    (
-        "borrower",
+_ENTITY_CAPTURE = r"""["\u201c\u201d]?\s*[,):\s]+\s*([A-Z][A-Za-z0-9 &.,\-']+)"""
+
+_ROLE_PATTERNS: list[tuple[str, re.Pattern[str]]] = []
+for _role, _synonyms in PARTY_ROLE_SYNONYMS.items():
+    _alt = "|".join(f"(?:{s})" for s in _synonyms)
+    _ROLE_PATTERNS.append((
+        _role,
         re.compile(
-            r'(?:the\s+)?["\u201c\u201d]?Borrower["\u201c\u201d]?\s*[,):\s]+\s*([A-Z][A-Za-z0-9 &.,\-\']+)',
+            rf'(?:{_alt})["\u201c\u201d]?\s*[,):\s]+\s*([A-Z][A-Za-z0-9 &.,\-\']+)',
             re.IGNORECASE,
         ),
-    ),
-    (
-        "lender",
-        re.compile(
-            r'(?:the\s+)?["\u201c\u201d]?Lenders?["\u201c\u201d]?\s*[,):\s]+\s*([A-Z][A-Za-z0-9 &.,\-\']+)',
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        "administrative_agent",
-        re.compile(
-            r'(?:the\s+)?["\u201c\u201d]?Administrative\s+Agent["\u201c\u201d]?\s*[,):\s]+\s*([A-Z][A-Za-z0-9 &.,\-\']+)',
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        "guarantor",
-        re.compile(
-            r'(?:the\s+)?["\u201c\u201d]?Guarantors?["\u201c\u201d]?\s*[,):\s]+\s*([A-Z][A-Za-z0-9 &.,\-\']+)',
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        "arranger",
-        re.compile(
-            r'(?:the\s+)?["\u201c\u201d]?(?:Lead\s+)?Arrangers?["\u201c\u201d]?\s*[,):\s]+\s*([A-Z][A-Za-z0-9 &.,\-\']+)',
-            re.IGNORECASE,
-        ),
-    ),
-]
+    ))
 
 
 def _clean_name(raw: str) -> str:
@@ -154,15 +130,16 @@ def extract_parties(blocks: list[dict], doc_id: str = "") -> list[Party]:
 
 
 def _infer_role_from_context(context: str) -> str:
-    """Guess a party role from the surrounding text."""
-    role_keywords = [
-        ("borrower", "borrower"),
-        ("lender", "lender"),
-        ("administrative_agent", "administrative agent"),
-        ("guarantor", "guarantor"),
-        ("arranger", "arranger"),
+    """Guess a party role from the surrounding text.
+
+    Uses all canonical roles from ``PARTY_ROLE_SYNONYMS`` to match
+    keywords in the context window.
+    """
+    _role_kw_map: list[tuple[str, str]] = [
+        (role, role.replace("_", " "))
+        for role in PARTY_ROLE_SYNONYMS
     ]
-    for role, kw in role_keywords:
+    for role, kw in _role_kw_map:
         if kw in context:
             return role
     return "unknown"

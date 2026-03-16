@@ -7,24 +7,22 @@ import re
 from dataclasses import dataclass, field
 from typing import Optional
 
+from src.field_patterns import SECTION_HEADER_PATTERNS
+
 # ---------------------------------------------------------------------------
-# Regex patterns for credit-agreement headings
+# Regex patterns for credit-agreement headings — from centralized definitions
 # ---------------------------------------------------------------------------
 
-_ARTICLE_ROMAN = re.compile(
-    r"^\s*ARTICLE\s+([IVXLCDM]+)\b[.\s]*(.*)$", re.IGNORECASE
-)
-_ARTICLE_ARABIC = re.compile(
-    r"^\s*ARTICLE\s+(\d+)\b[.\s]*(.*)$", re.IGNORECASE
-)
-_SECTION_DOTTED = re.compile(
-    r"^\s*(?:SECTION|Section)\s+(\d+\.\d+)\b[.\s]*(.*)$"
-)
+def _compile_header(key: str, flags: int = 0) -> re.Pattern[str]:
+    """Compile a SECTION_HEADER_PATTERNS entry (single pattern string)."""
+    return re.compile(SECTION_HEADER_PATTERNS[key][0], flags)
 
-# Fallback pattern for numbered headings like "1.01  Definitions"
-_SECTION_LOOSE = re.compile(
-    r"^\s*(\d{1,3}\.\d{1,3})\s{2,}([A-Z].*)"
-)
+_ARTICLE_ROMAN = _compile_header("article_roman", re.IGNORECASE)
+_ARTICLE_ARABIC = _compile_header("article_arabic", re.IGNORECASE)
+_SECTION_DOTTED = _compile_header("section_dotted")
+_SECTION_LOOSE = _compile_header("section_loose")
+_PART = _compile_header("part", re.IGNORECASE)
+_CLAUSE = _compile_header("clause")
 
 
 @dataclass
@@ -80,7 +78,11 @@ def detect_sections(blocks: list[dict]) -> list[SectionNode]:
         first_line = text.split("\n", 1)[0].strip()
 
         # Try ARTICLE patterns first
-        m = _ARTICLE_ROMAN.match(first_line) or _ARTICLE_ARABIC.match(first_line)
+        m = (
+            _ARTICLE_ROMAN.match(first_line)
+            or _ARTICLE_ARABIC.match(first_line)
+            or _PART.match(first_line)
+        )
         if m:
             number = m.group(1).strip()
             title = m.group(2).strip().strip(".")
@@ -100,7 +102,11 @@ def detect_sections(blocks: list[dict]) -> list[SectionNode]:
             continue
 
         # Try SECTION patterns
-        m = _SECTION_DOTTED.match(first_line) or _SECTION_LOOSE.match(first_line)
+        m = (
+            _SECTION_DOTTED.match(first_line)
+            or _CLAUSE.match(first_line)
+            or _SECTION_LOOSE.match(first_line)
+        )
         if m:
             number = m.group(1).strip()
             title = m.group(2).strip().strip(".")

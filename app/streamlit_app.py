@@ -139,17 +139,36 @@ def display_results(doc_dict: dict, graph_stats: dict) -> None:
 
 
 def run_pipeline(pdf_path: Path) -> None:
-    """Run the parsing pipeline and display results."""
-    with st.spinner(f"Processing {pdf_path.name}..."):
-        try:
-            doc, graph = process_document(pdf_path)
-            doc_dict = json.loads(doc.model_dump_json())
-            stats = graph_summary(graph)
-            st.success(f"Successfully parsed: {pdf_path.name}")
-            display_results(doc_dict, stats)
-        except Exception as e:
-            st.error(f"Error processing {pdf_path.name}: {e}")
-            st.exception(e)
+    """Run the parsing pipeline and display results with progress tracking."""
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
+    def on_progress(step: int, total: int, message: str) -> None:
+        progress_bar.progress(step / total)
+        status_text.markdown(f"**Step {step}/{total}:** {message}")
+
+    try:
+        doc, graph = process_document(pdf_path, progress_callback=on_progress)
+        progress_bar.progress(1.0)
+        status_text.empty()
+        doc_dict = json.loads(doc.model_dump_json())
+        stats = graph_summary(graph)
+
+        meta = doc_dict.get("extraction_metadata", {})
+        st.success(
+            f"Done — {doc.total_pages} pages, "
+            f"{meta.get('total_blocks', 0)} blocks, "
+            f"{len(doc.parties)} parties, "
+            f"{len(doc.facilities)} facilities, "
+            f"{len(doc.covenants)} covenants, "
+            f"{stats.get('total_nodes', 0)} graph nodes"
+        )
+        display_results(doc_dict, stats)
+    except Exception as e:
+        progress_bar.empty()
+        status_text.empty()
+        st.error(f"Error processing {pdf_path.name}: {e}")
+        st.exception(e)
 
 
 # Main area
