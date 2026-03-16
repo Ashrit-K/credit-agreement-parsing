@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.env
+.DS_Store
+venv/
+.venv/
+output/json/*.json
+output/graphs/*.gexf
+output/graphs/*.json
+*.egg-info/
+dist/
+build/
+.pytest_cache/
