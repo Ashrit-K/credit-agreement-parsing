@@ -1,5 +1,8 @@
-"""Extracts parties (borrower, lender, administrative agent, guarantor)
-from credit agreement text blocks using spaCy NER and regex."""
+"""Extract parties with precision-first filtering.
+
+Combines role-aware regex and spaCy ORG detection, then applies
+strict validation so narrative/legal prose is not mislabeled as parties.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +11,7 @@ from typing import Optional
 
 import spacy
 
-from src.field_patterns import PARTY_ROLE_SYNONYMS, compile_patterns
+from src.field_patterns import PARTY_ROLE_SYNONYMS
 from src.models.schema import Party, SourceRef
 
 # ---------------------------------------------------------------------------
@@ -29,7 +32,107 @@ def _get_nlp() -> spacy.language.Language:
 # Role-detection regex patterns — built from centralized PARTY_ROLE_SYNONYMS
 # ---------------------------------------------------------------------------
 
-_ENTITY_CAPTURE = r"""["\u201c\u201d]?\s*[,):\s]+\s*([A-Z][A-Za-z0-9 &.,\-']+)"""
+_ROLE_ONLY_NAMES = {
+    "borrower",
+    "co borrower",
+    "co-borrower",
+    "lender",
+    "lenders",
+    "administrative agent",
+    "agent",
+    "facility agent",
+    "guarantor",
+    "guarantors",
+    "arranger",
+    "arrangers",
+    "credit agreement",
+    "definitions",
+}
+
+_GENERIC_NON_PARTY_TERMS = {
+    "effective date",
+    "conversion",
+    "warranties",
+    "definitions",
+    "taxes",
+    "credit agreement",
+    "executed counterparts",
+    "commitment",
+    "termination date",
+    "class b revolving commitment",
+    "fronting bank",
+    "federal reserve bank",
+    "letters of credit",
+    "bank, ltd",
+}
+
+_NON_NAME_WORDS_RE = re.compile(
+    r"\b("
+    r"has|have|having|requested|requests|requesting|hereby|shall|will|"
+    r"among|other|things|that|reduce|increase|amend|ratify|ratifies|ratified|"
+    r"affirms|affirm|party|thereto|hereunder|hereto|pursuant|whereas"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_ROLE_OR_GENERIC_WORDS_RE = re.compile(
+    r"\b("
+    r"borrower|lender|lenders|guarantor|guarantors|arranger|arrangers|"
+    r"administrative\s+agent|facility\s+agent|agent|agreement|commitment|"
+    r"regulation|certification|termination|date|ownership|swingline|conversion|"
+    r"definitions|warranties|taxes"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_ENTITY_MARKER_RE = re.compile(
+    r"\b("
+    r"bank|n\.a\.?|inc\.?|llc|ltd\.?|limited|corp\.?|corporation|company|co\.|"
+    r"plc|lp|l\.p\.|partners?|holdings?|trust|association|securities|capital|"
+    r"group|finance|s\.a\.?|ag|gmbh"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _is_valid_party_name(name: str) -> bool:
+    """Return True only for names that look like real legal entities."""
+    normalized = " ".join(name.strip().split())
+    if len(normalized) < 3:
+        return False
+    if len(normalized) > 160:
+        return False
+
+    lowered = normalized.lower()
+    lowered_no_article = re.sub(r"^(?:the|each|a|an)\s+", "", lowered).strip()
+    if lowered in _ROLE_ONLY_NAMES:
+        return False
+    if lowered in _GENERIC_NON_PARTY_TERMS:
+        return False
+    if lowered_no_article in _GENERIC_NON_PARTY_TERMS:
+        return False
+    if _NON_NAME_WORDS_RE.search(lowered):
+        return False
+    if _ROLE_OR_GENERIC_WORDS_RE.search(lowered):
+        return False
+
+    tokens = [t.strip(".,;:()[]\"'") for t in normalized.split() if t.strip(".,;:()[]\"'")]
+    if not tokens:
+        return False
+
+    if len(tokens) == 1:
+        tok = tokens[0]
+        low = tok.lower()
+        if len(tok) <= 4:
+            return False
+        if low in {"ltd", "inc", "llc", "corp", "co", "bank", "n.a", "na", "plc", "lp"}:
+            return False
+
+    # Precision-first: require names to look like legal entities.
+    if not _ENTITY_MARKER_RE.search(normalized):
+        return False
+
+    return True
 
 _ROLE_PATTERNS: list[tuple[str, re.Pattern[str]]] = []
 for _role, _synonyms in PARTY_ROLE_SYNONYMS.items():
@@ -37,15 +140,18 @@ for _role, _synonyms in PARTY_ROLE_SYNONYMS.items():
     _ROLE_PATTERNS.append((
         _role,
         re.compile(
-            rf'(?:{_alt})["\u201c\u201d]?\s*[,):\s]+\s*([A-Z][A-Za-z0-9 &.,\-\']+)',
-            re.IGNORECASE,
+            # Require punctuation after role keyword (",", ":" or ")")
+            # so narrative text like "Borrower has requested..." is ignored.
+            rf'(?i:(?:{_alt}))["\u201c\u201d]?\s*[,):]\s*'
+            rf'([A-Z][A-Za-z0-9&.,\-\']*(?:\s+(?:[A-Z0-9][A-Za-z0-9&.,\-\']*|and|of|the|&)){{0,18}})',
         ),
     ))
 
 
 def _clean_name(raw: str) -> str:
     """Trim trailing noise from a captured entity name."""
-    name = raw.strip().rstrip(",;:.")
+    first_line = raw.strip().splitlines()[0]
+    name = " ".join(first_line.split()).rstrip(",;:.")
     for stop in ("(the ", "(herein", "(collectively", ", a ", ", an "):
         idx = name.lower().find(stop)
         if idx > 0:
@@ -82,7 +188,7 @@ def extract_parties(blocks: list[dict], doc_id: str = "") -> list[Party]:
         for role, pattern in _ROLE_PATTERNS:
             for m in pattern.finditer(text):
                 name = _clean_name(m.group(1))
-                if not name or len(name) < 3:
+                if not _is_valid_party_name(name):
                     continue
                 key = (name.lower(), role)
                 if key not in seen:
@@ -106,10 +212,12 @@ def extract_parties(blocks: list[dict], doc_id: str = "") -> list[Party]:
         for ent in doc.ents:
             if ent.label_ == "ORG":
                 name = _clean_name(ent.text)
-                if not name or len(name) < 3:
+                if not _is_valid_party_name(name):
                     continue
                 context = text[max(0, ent.start_char - 80): ent.end_char + 80].lower()
                 role = _infer_role_from_context(context)
+                if role == "unknown":
+                    continue
                 key = (name.lower(), role)
                 if key not in seen:
                     seen.add(key)

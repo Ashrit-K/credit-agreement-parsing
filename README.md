@@ -45,7 +45,7 @@ All extractors import their regex patterns and synonyms from a single file. To e
 | Module | Data source | What it extracts |
 |--------|-------------|-----------------|
 | `section_detector.py` | Text blocks | ARTICLE/SECTION/PART/CLAUSE headers → hierarchical section tree |
-| `party_extractor.py` | Text blocks (preamble + signature pages) | Party names and roles via spaCy NER + regex |
+| `party_extractor.py` | Text blocks (preamble + signature pages) | Party names and roles via regex + spaCy, with precision filters to suppress narrative false positives |
 | `facility_extractor.py` | Text blocks (ARTICLE II sections) | Facility type (9 types), dollar amounts, effective/maturity dates, multi-tranche |
 | `interest_extractor.py` | Text blocks | Benchmark rate (12 benchmarks), spread (bps/%), floor, cap, PIK flag, default rate |
 | `table_parser.py` | pdfplumber tables | Classifies tables (pricing grid, amortization, covenant) and parses into structured models |
@@ -197,6 +197,8 @@ Tests cover:
 - `test_pdf_extractor.py` — PDF extraction returns pages, text, metadata
 - `test_section_detector.py` — ARTICLE/SECTION detection and keyword search
 - `test_pipeline.py` — End-to-end pipeline produces valid document and graph
+- `test_convert_htm_to_pdf.py` — HTML normalization and overflow-fix CSS injection
+- `test_party_extractor.py` — party false-positive regression controls
 
 ## Project Structure
 
@@ -237,11 +239,13 @@ Credit_Agreement_Parsing/
 │   └── graphs/                   # Serialized knowledge graphs
 ├── raw_documents/
 │   ├── pdf/                      # 45 source PDFs
-│   └── htm/                      # 30 HTM source files
+│   └── htm/                      # 34 HTM source files
 ├── tests/
 │   ├── test_pdf_extractor.py
 │   ├── test_section_detector.py
-│   └── test_pipeline.py
+│   ├── test_pipeline.py
+│   ├── test_convert_htm_to_pdf.py
+│   └── test_party_extractor.py
 ├── scripts/                      # Download and conversion utilities
 ├── requirements.txt
 └── .env                          # API keys (scaffold, not committed)
@@ -280,7 +284,7 @@ This enables traceability from any JSON field back to the exact location in the 
 
 ## Known Limitations (v1)
 
-- **Party extraction** is noisy — spaCy NER captures many ORG entities beyond actual parties. Filtering heuristics could be tighter.
+- **Party extraction** now prioritizes precision over recall. Generic/legal prose false positives are filtered aggressively, so some edge-case aliases may be omitted.
 - **Section detection** requires conventional ARTICLE/SECTION formatting. Agreements with non-standard headings may have weaker extraction.
 - **Interest terms** in tables only (without surrounding prose) may be missed by the text-block-based extractor.
 - **OCR** requires poppler and tesseract installed. Without them, scanned pages are skipped gracefully.

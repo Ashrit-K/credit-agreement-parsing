@@ -652,11 +652,11 @@ Returns every `SectionNode` (at any depth) whose title contains the keyword (cas
 
 ## `src/parsing/party_extractor.py`
 
-Extracts parties (borrower, lender, administrative agent, guarantor, arranger) from credit agreement text using spaCy NER and regex. Role patterns dynamically built from `PARTY_ROLE_SYNONYMS` in `field_patterns.py`.
+Extracts parties (borrower, lender, administrative agent, guarantor, arranger) from credit agreement text using regex + spaCy NER with **precision-first validation**. Role patterns are dynamically built from `PARTY_ROLE_SYNONYMS` in `field_patterns.py`.
 
 ### Regex Patterns
 
-Built at import time from `field_patterns.PARTY_ROLE_SYNONYMS` (5 roles, 25 total synonyms). Matches patterns like `"Borrower", Some Corp` or `the Administrative Agent, JPMorgan Chase`. Handles smart quotes (`\u201c`, `\u201d`). Roles: `borrower` (5 synonyms), `lender` (6), `administrative_agent` (5), `guarantor` (4), `arranger` (5).
+Built at import time from `field_patterns.PARTY_ROLE_SYNONYMS` (5 roles, 25 total synonyms). Matches patterns like `"Borrower", Some Corp` or `the Administrative Agent, JPMorgan Chase`. Handles smart quotes (`\u201c`, `\u201d`). Requires punctuation after role token (`","`, `":"`, or `")"`) to avoid matching narrative phrases like `"Borrower has requested..."`. Roles: `borrower` (5 synonyms), `lender` (6), `administrative_agent` (5), `guarantor` (4), `arranger` (5).
 
 ### `extract_parties(blocks, doc_id="")`
 
@@ -674,9 +674,13 @@ Extracts party information from credit agreement blocks.
 **Behavior:**
 1. Selects **preamble** (first 5 blocks) and **signature pages** (last 20 blocks) as focus regions.
 2. Runs regex patterns for each role, capturing the entity name after the role keyword.
-3. Runs spaCy NER (`en_core_web_sm`) on the same blocks, extracting `ORG` entities.
-4. For NER-detected entities, infers role from surrounding context (80 chars before/after).
-5. Cleans names: strips trailing punctuation, truncates at stop phrases like "(the", "(herein", "(collectively".
+3. Applies precision filters to candidate names:
+   - reject role-only/generic terms (`Borrower`, `Definitions`, `Effective Date`, etc.)
+   - reject narrative/legal prose fragments (`has requested`, `hereby`, `pursuant`, etc.)
+   - require legal-entity markers (`Bank`, `Inc.`, `LLC`, `Ltd`, `Corp`, etc.)
+4. Runs spaCy NER (`en_core_web_sm`) on the same blocks, extracting `ORG` entities.
+5. For NER-detected entities, infers role from surrounding context (80 chars before/after) and discards role=`unknown`.
+6. Cleans names: keeps first line only, strips trailing punctuation, truncates at stop phrases like "(the", "(herein", "(collectively".
 
 ### Internal Functions
 
@@ -686,7 +690,11 @@ Lazy-loads and caches the spaCy `en_core_web_sm` model. Returns `spacy.language.
 
 #### `_clean_name(raw)`
 
-Trims trailing punctuation and truncates at common stop phrases.
+Keeps first line only, trims trailing punctuation, and truncates at common stop phrases.
+
+#### `_is_valid_party_name(name)`
+
+Precision gate for candidate names. Rejects role/generic tokens, prose fragments, and non-entity strings. Requires at least one legal-entity marker token.
 
 #### `_infer_role_from_context(context)`
 
