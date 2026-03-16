@@ -6,55 +6,32 @@ from __future__ import annotations
 import re
 from typing import Optional
 
+from src.field_patterns import (
+    AMENDMENT_DETECTION_SYNONYMS,
+    AMENDMENT_ORDINALS,
+    DATE_RE,
+    SECTION_KEYWORDS,
+)
 from src.models.schema import AmendmentInfo, SourceRef
 from src.parsing.section_detector import SectionNode
 
 # ---------------------------------------------------------------------------
-# Amendment detection patterns
+# Amendment detection patterns (compiled from centralized synonyms)
 # ---------------------------------------------------------------------------
 
 _IS_AMENDMENT_RE = re.compile(
-    r"\b(?:(?:First|Second|Third|Fourth|Fifth|Sixth|Seventh|Eighth|Ninth|Tenth|\d+(?:st|nd|rd|th)?)\s+)?Amendment\b|"
-    r"\bAmended\s+and\s+Restated\b|"
-    r"\bAmendment\s+(?:No\.|Number)\s*(\d+)",
+    "|".join(f"(?:{p})" for p in AMENDMENT_DETECTION_SYNONYMS),
     re.IGNORECASE,
 )
 
 _AMENDMENT_NUMBER_RE = re.compile(
-    r"(?:(?:First|1st)\b.*Amendment)|"
-    r"(?:(?:Second|2nd)\b.*Amendment)|"
-    r"(?:(?:Third|3rd)\b.*Amendment)|"
-    r"(?:(?:Fourth|4th)\b.*Amendment)|"
-    r"(?:(?:Fifth|5th)\b.*Amendment)|"
-    r"(?:(?:Sixth|6th)\b.*Amendment)|"
-    r"(?:(?:Seventh|7th)\b.*Amendment)|"
-    r"(?:(?:Eighth|8th)\b.*Amendment)|"
-    r"(?:(?:Ninth|9th)\b.*Amendment)|"
-    r"(?:(?:Tenth|10th)\b.*Amendment)|"
-    r"Amendment\s+(?:No\.|Number)\s*(\d+)",
+    "|".join(f"(?:{p})" for p in AMENDMENT_DETECTION_SYNONYMS),
     re.IGNORECASE,
 )
 
-_ORDINAL_MAP: dict[str, str] = {
-    "first": "1", "1st": "1",
-    "second": "2", "2nd": "2",
-    "third": "3", "3rd": "3",
-    "fourth": "4", "4th": "4",
-    "fifth": "5", "5th": "5",
-    "sixth": "6", "6th": "6",
-    "seventh": "7", "7th": "7",
-    "eighth": "8", "8th": "8",
-    "ninth": "9", "9th": "9",
-    "tenth": "10", "10th": "10",
-}
+_ORDINAL_MAP = AMENDMENT_ORDINALS
 
-_DATE_RE = re.compile(
-    r"(?:January|February|March|April|May|June|July|August|September|"
-    r"October|November|December)\s+\d{1,2},?\s+\d{4}|"
-    r"\d{1,2}/\d{1,2}/\d{4}|"
-    r"\d{4}-\d{2}-\d{2}",
-    re.IGNORECASE,
-)
+_DATE_RE = DATE_RE
 
 _AMENDMENT_DATE_RE = re.compile(
     r"(?:dated\s+(?:as\s+of\s+)?|effective\s+(?:as\s+of\s+)?)"

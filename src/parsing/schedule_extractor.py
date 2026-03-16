@@ -6,6 +6,14 @@ from __future__ import annotations
 import re
 from typing import Optional
 
+from src.field_patterns import (
+    CALL_PROTECTION_SYNONYMS,
+    TICKING_FEE_SYNONYMS,
+    AMOUNT_PATTERNS,
+    AMOUNT_MULTIPLIERS,
+    DATE_RE,
+    SECTION_KEYWORDS,
+)
 from src.models.schema import (
     AmortizationEntry,
     AmortizationSchedule,
@@ -15,12 +23,11 @@ from src.parsing.section_detector import SectionNode, find_section_by_keyword
 from src.parsing.table_parser import parse_amortization_table
 
 # ---------------------------------------------------------------------------
-# Call protection patterns
+# Call protection patterns (compiled from centralized synonyms)
 # ---------------------------------------------------------------------------
 
 _CALL_PROTECTION_RE = re.compile(
-    r"(?:call\s+protection|prepayment\s+premium|make[\s-]?whole|"
-    r"soft\s+call|hard\s+call|non[\s-]?call|no[\s-]?call)",
+    "|".join(f"(?:{p})" for p in CALL_PROTECTION_SYNONYMS),
     re.IGNORECASE,
 )
 
@@ -39,7 +46,7 @@ _CALL_PREMIUM_RE = re.compile(
 # ---------------------------------------------------------------------------
 
 _TICKING_FEE_RE = re.compile(
-    r"ticking\s+fee",
+    "|".join(f"(?:{p})" for p in TICKING_FEE_SYNONYMS),
     re.IGNORECASE,
 )
 
@@ -68,20 +75,9 @@ _AMORT_AMOUNT_RE = re.compile(
     re.IGNORECASE,
 )
 
-_DATE_RE = re.compile(
-    r"(?:January|February|March|April|May|June|July|August|September|"
-    r"October|November|December)\s+\d{1,2},?\s+\d{4}|"
-    r"\d{1,2}/\d{1,2}/\d{4}|"
-    r"\d{4}-\d{2}-\d{2}",
-    re.IGNORECASE,
-)
+_DATE_RE = DATE_RE
 
-_MULTIPLIER = {
-    "million": 1_000_000,
-    "mn": 1_000_000,
-    "billion": 1_000_000_000,
-    "bn": 1_000_000_000,
-}
+_MULTIPLIER = AMOUNT_MULTIPLIERS
 
 
 # ---------------------------------------------------------------------------
@@ -237,12 +233,9 @@ def extract_schedules(
     }
 
     # --- Amortization schedules ---
-    schedule_sections = (
-        find_section_by_keyword(sections, "SCHEDULE")
-        + find_section_by_keyword(sections, "EXHIBIT")
-        + find_section_by_keyword(sections, "AMORTIZATION")
-        + find_section_by_keyword(sections, "REPAYMENT")
-    )
+    schedule_sections = []
+    for kw in SECTION_KEYWORDS["schedule"]:
+        schedule_sections += find_section_by_keyword(sections, kw)
 
     # From tables
     amort_tables: list[list[list[str]]] = []
@@ -275,11 +268,9 @@ def extract_schedules(
     full_text = "\n".join(b.get("text", "") for b in blocks)
 
     # Also look in specific sections
-    prepay_sections = (
-        find_section_by_keyword(sections, "PREPAYMENT")
-        + find_section_by_keyword(sections, "CALL")
-        + find_section_by_keyword(sections, "REDEMPTION")
-    )
+    prepay_sections = []
+    for kw in SECTION_KEYWORDS["prepayment"]:
+        prepay_sections += find_section_by_keyword(sections, kw)
     if prepay_sections:
         prepay_text = "\n".join(
             _collect_text(blocks, s.start_block_idx, s.end_block_idx)
@@ -291,10 +282,9 @@ def extract_schedules(
     result["call_protection"] = _extract_call_protection(prepay_text)
 
     # --- Ticking fees ---
-    fee_sections = (
-        find_section_by_keyword(sections, "FEE")
-        + find_section_by_keyword(sections, "TICKING")
-    )
+    fee_sections = []
+    for kw in SECTION_KEYWORDS["fees"]:
+        fee_sections += find_section_by_keyword(sections, kw)
     if fee_sections:
         fee_text = "\n".join(
             _collect_text(blocks, s.start_block_idx, s.end_block_idx)

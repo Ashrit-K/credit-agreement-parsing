@@ -93,6 +93,7 @@ def _extract_agreement_date(blocks: list[dict]) -> str:
 def process_document(
     pdf_path: str | Path,
     save_output: bool = True,
+    progress_callback: Optional[callable] = None,
 ) -> tuple[CreditAgreementDocument, nx.DiGraph]:
     """Run the full parsing pipeline on a single PDF.
 
@@ -102,6 +103,9 @@ def process_document(
         Path to the PDF file.
     save_output:
         If True, write JSON and graph files to the output directories.
+    progress_callback:
+        Optional callable(step: int, total: int, message: str) for
+        reporting progress to the caller (e.g. Streamlit UI).
 
     Returns
     -------
@@ -112,31 +116,43 @@ def process_document(
     doc_id = _generate_doc_id(pdf_path)
     logger.info("Processing %s (doc_id=%s)", pdf_path.name, doc_id)
 
-    # ── Phase 1: Ingestion ────────────────────────────────────────────
-    extraction = extract_pdf(pdf_path)
-    logger.info("Extracted %d pages from %s", extraction.metadata.total_pages, pdf_path.name)
+    total_steps = 13
 
-    # OCR fallback for scanned pages
+    def _progress(step: int, msg: str) -> None:
+        logger.info(msg)
+        if progress_callback:
+            progress_callback(step, total_steps, msg)
+
+    # ── Phase 1: Ingestion ────────────────────────────────────────────
+    _progress(1, "Extracting text and tables from PDF...")
+    extraction = extract_pdf(pdf_path)
+
+    _progress(2, f"Extracted {extraction.metadata.total_pages} pages — running OCR on scanned pages...")
     extraction.pages = ocr_flagged_pages(pdf_path, extraction.pages)
 
-    # Segment into blocks
+    _progress(3, "Segmenting pages into text blocks...")
     blocks = segment_pages(extraction.pages, doc_id)
     block_dicts = _blocks_to_dicts(blocks)
-    logger.info("Segmented into %d blocks", len(block_dicts))
 
-    # Collect all tables
     all_tables = _collect_all_tables(extraction)
 
     # ── Phase 2: Parsing ──────────────────────────────────────────────
-    # Section detection
+    _progress(4, f"Detecting sections across {len(block_dicts)} blocks...")
     sections = detect_sections(block_dicts)
-    logger.info("Detected %d top-level sections", len(sections))
 
-    # Entity extraction
+    _progress(5, "Extracting parties (borrower, lender, agent, guarantor)...")
     parties = extract_parties(block_dicts, doc_id)
+
+    _progress(6, "Extracting facility details (type, amount, dates)...")
     facilities = extract_facilities(block_dicts, sections, doc_id)
+
+    _progress(7, "Extracting interest rate terms (benchmark, spread, floor)...")
     interest_terms_list = extract_interest_terms(block_dicts, sections, doc_id)
+
+    _progress(8, "Extracting covenants (financial, negative, affirmative)...")
     covenants = extract_covenants(block_dicts, sections, doc_id)
+
+    _progress(9, "Extracting amendments and schedules...")
     amendments = extract_amendments(block_dicts, sections, doc_id)
     schedules = extract_schedules(block_dicts, sections, all_tables, doc_id)
 
@@ -145,7 +161,6 @@ def process_document(
         if i < len(interest_terms_list):
             facility.interest_terms = interest_terms_list[i]
         elif interest_terms_list:
-            # Share first interest terms across remaining facilities
             facility.interest_terms = interest_terms_list[0]
 
     # Attach amortization schedules to facilities
@@ -155,10 +170,12 @@ def process_document(
             facility.amortization = amort_schedules[i]
 
     # Extract metadata
+    _progress(10, "Extracting document title and date...")
     title = _extract_title(block_dicts)
     agreement_date = _extract_agreement_date(block_dicts)
 
     # ── Phase 3: Assemble Document ────────────────────────────────────
+    _progress(11, "Assembling structured document...")
     doc = CreditAgreementDocument(
         doc_id=doc_id,
         file_name=pdf_path.name,
@@ -180,10 +197,11 @@ def process_document(
     )
 
     # ── Phase 4: Knowledge Graph ──────────────────────────────────────
+    _progress(12, "Building knowledge graph...")
     graph = build_graph(doc)
-    logger.info("Built graph: %d nodes, %d edges", graph.number_of_nodes(), graph.number_of_edges())
 
     # ── Save output ───────────────────────────────────────────────────
+    _progress(13, "Saving JSON and graph output...")
     if save_output:
         json_path = OUTPUT_JSON_DIR / f"{doc_id}.json"
         with open(json_path, "w") as f:

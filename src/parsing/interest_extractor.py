@@ -6,58 +6,35 @@ from __future__ import annotations
 import re
 from typing import Optional
 
+from src.field_patterns import (
+    BENCHMARK_PATTERNS,
+    FLOOR_SYNONYMS,
+    PIK_SYNONYMS,
+    SECTION_KEYWORDS,
+    SPREAD_SYNONYMS,
+)
 from src.models.schema import InterestTerms, SourceRef
 from src.parsing.section_detector import SectionNode, find_section_by_keyword
 
 # ---------------------------------------------------------------------------
-# Benchmark detection
+# Compiled patterns derived from centralized field_patterns
 # ---------------------------------------------------------------------------
 
-_BENCHMARK_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    ("Term SOFR", re.compile(r"\bTerm\s+SOFR\b", re.IGNORECASE)),
-    ("SOFR", re.compile(r"\bSOFR\b")),
-    ("LIBOR", re.compile(r"\bLIBOR\b", re.IGNORECASE)),
-    ("EURIBOR", re.compile(r"\bEURIBOR\b", re.IGNORECASE)),
-    ("Prime Rate", re.compile(r"\bPrime\s+Rate\b", re.IGNORECASE)),
-    ("ABR", re.compile(r"\b(?:ABR|Alternate\s+Base\s+Rate)\b", re.IGNORECASE)),
-    ("Base Rate", re.compile(r"\bBase\s+Rate\b", re.IGNORECASE)),
-]
+_BENCHMARK_PATTERNS = BENCHMARK_PATTERNS
 
-# ---------------------------------------------------------------------------
-# Spread patterns  (e.g. "plus 2.50%", "+ 250 basis points")
-# ---------------------------------------------------------------------------
+# Spread: first two synonyms are pct and bps variants
+_SPREAD_PCT_RE = re.compile(SPREAD_SYNONYMS[0], re.IGNORECASE)
+_SPREAD_BPS_RE = re.compile(SPREAD_SYNONYMS[1], re.IGNORECASE)
 
-_SPREAD_PCT_RE = re.compile(
-    r"(?:plus|add|\+)\s+(\d+(?:\.\d+)?)\s*%",
-    re.IGNORECASE,
+# Floor: pct (index 0), bps (index 1), zero-reference (index 3 — "benchmark floor")
+_FLOOR_PCT_RE = re.compile(FLOOR_SYNONYMS[0], re.IGNORECASE)
+_FLOOR_BPS_RE = re.compile(FLOOR_SYNONYMS[1], re.IGNORECASE)
+_FLOOR_ZERO_RE = re.compile(FLOOR_SYNONYMS[3], re.IGNORECASE)
+
+# PIK
+_PIK_RE = re.compile(
+    "|".join(f"(?:{p})" for p in PIK_SYNONYMS), re.IGNORECASE
 )
-_SPREAD_BPS_RE = re.compile(
-    r"(?:plus|add|\+)\s+(\d+(?:\.\d+)?)\s*(?:basis\s+points|bps)",
-    re.IGNORECASE,
-)
-
-# ---------------------------------------------------------------------------
-# Floor patterns  (e.g. "floor of 0.50%", "SOFR floor of 50 basis points")
-# ---------------------------------------------------------------------------
-
-_FLOOR_PCT_RE = re.compile(
-    r"floor\s+of\s+(\d+(?:\.\d+)?)\s*%",
-    re.IGNORECASE,
-)
-_FLOOR_BPS_RE = re.compile(
-    r"floor\s+of\s+(\d+(?:\.\d+)?)\s*(?:basis\s+points|bps)",
-    re.IGNORECASE,
-)
-_FLOOR_ZERO_RE = re.compile(
-    r"(?:SOFR|LIBOR|benchmark)\s+floor",
-    re.IGNORECASE,
-)
-
-# ---------------------------------------------------------------------------
-# PIK detection
-# ---------------------------------------------------------------------------
-
-_PIK_RE = re.compile(r"\b(?:paid?\s+in\s+kind|PIK)\b", re.IGNORECASE)
 
 # ---------------------------------------------------------------------------
 # Default rate
@@ -146,12 +123,9 @@ def extract_interest_terms(
         One per distinct benchmark detected.
     """
     # Determine focus regions (interest-related sections)
-    interest_sections = (
-        find_section_by_keyword(sections, "INTEREST")
-        + find_section_by_keyword(sections, "RATE")
-        + find_section_by_keyword(sections, "PRICING")
-        + find_section_by_keyword(sections, "APPLICABLE MARGIN")
-    )
+    interest_sections = []
+    for kw in SECTION_KEYWORDS["interest"]:
+        interest_sections += find_section_by_keyword(sections, kw)
 
     if interest_sections:
         text_parts: list[str] = []

@@ -6,108 +6,22 @@ from __future__ import annotations
 import re
 from typing import Optional
 
+from src.field_patterns import (
+    FINANCIAL_COVENANT_PATTERNS,
+    NEGATIVE_COVENANT_PATTERNS,
+    AFFIRMATIVE_COVENANT_PATTERNS,
+    RATIO_PATTERNS,
+    TESTING_FREQUENCY_SYNONYMS,
+    SECTION_KEYWORDS,
+)
 from src.models.schema import Covenant, CovenantThreshold, SourceRef, StepDown
 from src.parsing.section_detector import SectionNode, find_section_by_keyword
 
 # ---------------------------------------------------------------------------
-# Ratio pattern (e.g. "4.50 to 1.00", "3.50:1.0")
+# Ratio pattern (compiled from centralized RATIO_PATTERNS)
 # ---------------------------------------------------------------------------
 
-_RATIO_RE = re.compile(r"(\d+\.\d+)\s*(?:to|:)\s*1\.0?0?")
-
-# ---------------------------------------------------------------------------
-# Financial covenant names and metrics
-# ---------------------------------------------------------------------------
-
-_FINANCIAL_COVENANT_PATTERNS: list[tuple[str, str, re.Pattern[str]]] = [
-    (
-        "Maximum Leverage Ratio",
-        "leverage_ratio",
-        re.compile(
-            r"(?:maximum\s+)?(?:total\s+)?leverage\s+ratio|"
-            r"(?:total\s+)?(?:net\s+)?debt\s+to\s+(?:ebitda|earnings)",
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        "Minimum Interest Coverage Ratio",
-        "interest_coverage_ratio",
-        re.compile(
-            r"(?:minimum\s+)?interest\s+coverage\s+ratio",
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        "Minimum Fixed Charge Coverage Ratio",
-        "fixed_charge_coverage_ratio",
-        re.compile(
-            r"(?:minimum\s+)?fixed\s+charge\s+coverage\s+ratio",
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        "Maximum Senior Leverage Ratio",
-        "senior_leverage_ratio",
-        re.compile(
-            r"(?:maximum\s+)?senior\s+(?:secured\s+)?leverage\s+ratio",
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        "Minimum Debt Service Coverage Ratio",
-        "debt_service_coverage_ratio",
-        re.compile(
-            r"(?:minimum\s+)?debt\s+service\s+coverage\s+ratio",
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        "Minimum Net Worth",
-        "net_worth",
-        re.compile(
-            r"(?:minimum\s+)?(?:tangible\s+)?net\s+worth",
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        "Maximum Capital Expenditures",
-        "capital_expenditures",
-        re.compile(
-            r"(?:maximum\s+)?capital\s+expenditures?|capex",
-            re.IGNORECASE,
-        ),
-    ),
-]
-
-# ---------------------------------------------------------------------------
-# Negative covenant categories
-# ---------------------------------------------------------------------------
-
-_NEGATIVE_COVENANT_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    ("Limitation on Liens", re.compile(r"\bliens?\b", re.IGNORECASE)),
-    ("Limitation on Indebtedness", re.compile(r"\bindebtedness\b", re.IGNORECASE)),
-    ("Restricted Payments", re.compile(r"\brestricted\s+payments?\b", re.IGNORECASE)),
-    ("Limitation on Dividends", re.compile(r"\bdividends?\b", re.IGNORECASE)),
-    ("Limitation on Asset Sales", re.compile(r"\basset\s+sales?\b|\bdispositions?\b", re.IGNORECASE)),
-    ("Limitation on Investments", re.compile(r"\binvestments?\b", re.IGNORECASE)),
-    ("Limitation on Mergers", re.compile(r"\bmergers?\b|\bconsolid", re.IGNORECASE)),
-    ("Limitation on Transactions with Affiliates", re.compile(r"\baffiliate\s+transactions?\b|\btransactions?\s+with\s+affiliates?\b", re.IGNORECASE)),
-    ("Limitation on Restrictive Agreements", re.compile(r"\brestrictive\s+agreements?\b", re.IGNORECASE)),
-]
-
-# ---------------------------------------------------------------------------
-# Affirmative covenant categories
-# ---------------------------------------------------------------------------
-
-_AFFIRMATIVE_COVENANT_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    ("Financial Reporting", re.compile(r"\bfinancial\s+(?:statements?|reports?|reporting)\b", re.IGNORECASE)),
-    ("Insurance", re.compile(r"\binsurance\b", re.IGNORECASE)),
-    ("Compliance with Laws", re.compile(r"\bcompliance\s+with\s+laws?\b", re.IGNORECASE)),
-    ("Maintenance of Properties", re.compile(r"\bmaintenance\s+of\s+propert", re.IGNORECASE)),
-    ("Books and Records", re.compile(r"\bbooks\s+and\s+records?\b", re.IGNORECASE)),
-    ("Notices", re.compile(r"\bnotices?\b", re.IGNORECASE)),
-    ("Use of Proceeds", re.compile(r"\buse\s+of\s+proceeds?\b", re.IGNORECASE)),
-]
+_RATIO_RE = re.compile(RATIO_PATTERNS[0], re.IGNORECASE)
 
 # ---------------------------------------------------------------------------
 # Step-down / step-up pattern
@@ -121,11 +35,13 @@ _STEP_DOWN_RE = re.compile(
 )
 
 # ---------------------------------------------------------------------------
-# Testing frequency
+# Testing frequency (compiled from centralized TESTING_FREQUENCY_SYNONYMS)
 # ---------------------------------------------------------------------------
 
-_QUARTERLY_RE = re.compile(r"\bquarter(?:ly)?\b", re.IGNORECASE)
-_ANNUAL_RE = re.compile(r"\bannual(?:ly)?\b|\bfiscal\s+year\b", re.IGNORECASE)
+_TESTING_FREQUENCY_RES: dict[str, re.Pattern[str]] = {}
+for _freq_label, _freq_patterns in TESTING_FREQUENCY_SYNONYMS.items():
+    _combined = "|".join(f"(?:{p})" for p in _freq_patterns)
+    _TESTING_FREQUENCY_RES[_freq_label] = re.compile(_combined, re.IGNORECASE)
 
 # ---------------------------------------------------------------------------
 # Period pattern (for thresholds)
@@ -196,10 +112,9 @@ def _extract_step_downs(text: str) -> list[StepDown]:
 
 
 def _detect_testing_frequency(text: str) -> str:
-    if _QUARTERLY_RE.search(text):
-        return "quarterly"
-    if _ANNUAL_RE.search(text):
-        return "annual"
+    for freq_label, freq_re in _TESTING_FREQUENCY_RES.items():
+        if freq_re.search(text):
+            return freq_label
     return ""
 
 
@@ -230,12 +145,9 @@ def extract_covenants(
     covenants: list[Covenant] = []
 
     # ---- Financial covenants ----
-    fin_sections = (
-        find_section_by_keyword(sections, "FINANCIAL COVENANT")
-        + find_section_by_keyword(sections, "FINANCIAL TEST")
-        + find_section_by_keyword(sections, "LEVERAGE")
-        + find_section_by_keyword(sections, "COVERAGE")
-    )
+    fin_sections = []
+    for kw in SECTION_KEYWORDS["covenant_financial"]:
+        fin_sections += find_section_by_keyword(sections, kw)
     if fin_sections:
         fin_text = "\n".join(
             _collect_text(blocks, s.start_block_idx, s.end_block_idx)
@@ -244,7 +156,7 @@ def extract_covenants(
     else:
         fin_text = "\n".join(b.get("text", "") for b in blocks)
 
-    for cov_name, metric, pattern in _FINANCIAL_COVENANT_PATTERNS:
+    for cov_name, metric, pattern in FINANCIAL_COVENANT_PATTERNS:
         if pattern.search(fin_text):
             # Extract the paragraph around the match for threshold analysis
             m = pattern.search(fin_text)
@@ -276,7 +188,9 @@ def extract_covenants(
             )
 
     # ---- Negative covenants ----
-    neg_sections = find_section_by_keyword(sections, "NEGATIVE COVENANT")
+    neg_sections = []
+    for kw in SECTION_KEYWORDS["covenant_negative"]:
+        neg_sections += find_section_by_keyword(sections, kw)
     if neg_sections:
         neg_text = "\n".join(
             _collect_text(blocks, s.start_block_idx, s.end_block_idx)
@@ -285,7 +199,7 @@ def extract_covenants(
     else:
         neg_text = fin_text  # fallback to full text
 
-    for cov_name, pattern in _NEGATIVE_COVENANT_PATTERNS:
+    for cov_name, pattern in NEGATIVE_COVENANT_PATTERNS:
         if pattern.search(neg_text):
             m = pattern.search(neg_text)
             if m is None:
@@ -307,7 +221,9 @@ def extract_covenants(
             )
 
     # ---- Affirmative covenants ----
-    aff_sections = find_section_by_keyword(sections, "AFFIRMATIVE COVENANT")
+    aff_sections = []
+    for kw in SECTION_KEYWORDS["covenant_affirmative"]:
+        aff_sections += find_section_by_keyword(sections, kw)
     if aff_sections:
         aff_text = "\n".join(
             _collect_text(blocks, s.start_block_idx, s.end_block_idx)
@@ -316,7 +232,7 @@ def extract_covenants(
     else:
         aff_text = fin_text
 
-    for cov_name, pattern in _AFFIRMATIVE_COVENANT_PATTERNS:
+    for cov_name, pattern in AFFIRMATIVE_COVENANT_PATTERNS:
         if pattern.search(aff_text):
             m = pattern.search(aff_text)
             if m is None:

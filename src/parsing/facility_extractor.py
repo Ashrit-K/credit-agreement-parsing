@@ -6,66 +6,30 @@ from __future__ import annotations
 import re
 from typing import Optional
 
+from src.field_patterns import (
+    AMOUNT_MULTIPLIERS,
+    AMOUNT_PATTERNS,
+    DATE_RE,
+    EFFECTIVE_RE,
+    FACILITY_TYPE_PATTERNS,
+    MATURITY_RE,
+    SECTION_KEYWORDS,
+)
 from src.models.schema import Facility, SourceRef
 from src.parsing.section_detector import SectionNode, find_section_by_keyword
 
 # ---------------------------------------------------------------------------
-# Money / amount patterns
+# Compiled patterns derived from centralized field_patterns
 # ---------------------------------------------------------------------------
 
-_AMOUNT_RE = re.compile(
-    r"\$\s*([\d,]+(?:\.\d+)?)\s*(million|billion|mn|bn)?",
-    re.IGNORECASE,
-)
+_FACILITY_TYPE_PATTERNS = FACILITY_TYPE_PATTERNS
 
-_MULTIPLIER = {
-    "million": 1_000_000,
-    "mn": 1_000_000,
-    "billion": 1_000_000_000,
-    "bn": 1_000_000_000,
-}
+_AMOUNT_RE = re.compile(AMOUNT_PATTERNS[0], re.IGNORECASE)
+_MULTIPLIER = AMOUNT_MULTIPLIERS
 
-# ---------------------------------------------------------------------------
-# Facility-type detection
-# ---------------------------------------------------------------------------
-
-_FACILITY_TYPE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    ("revolving", re.compile(r"revolving\s+(?:credit\s+)?(?:facility|commitment|loan)", re.IGNORECASE)),
-    ("term_loan_b", re.compile(r"term\s+(?:loan\s+)?b\b", re.IGNORECASE)),
-    ("term_loan_a", re.compile(r"term\s+(?:loan\s+)?a\b", re.IGNORECASE)),
-    ("term_loan", re.compile(r"term\s+(?:loan|facility)", re.IGNORECASE)),
-    ("delayed_draw", re.compile(r"delayed[\s-]+draw", re.IGNORECASE)),
-    ("bridge", re.compile(r"bridge\s+(?:loan|facility)", re.IGNORECASE)),
-    ("letter_of_credit", re.compile(r"letter\s+of\s+credit", re.IGNORECASE)),
-]
-
-# ---------------------------------------------------------------------------
-# Date patterns
-# ---------------------------------------------------------------------------
-
-_DATE_RE = re.compile(
-    r"(?:"
-    r"(?:January|February|March|April|May|June|July|August|September|"
-    r"October|November|December)\s+\d{1,2},?\s+\d{4}"
-    r"|"
-    r"\d{1,2}/\d{1,2}/\d{4}"
-    r"|"
-    r"\d{4}-\d{2}-\d{2}"
-    r")",
-    re.IGNORECASE,
-)
-
-_MATURITY_RE = re.compile(
-    r"(?:maturity\s+date|matures?\s+on|termination\s+date)\s*[:\s]*"
-    r"(" + _DATE_RE.pattern + r")",
-    re.IGNORECASE,
-)
-
-_EFFECTIVE_RE = re.compile(
-    r"(?:effective\s+date|closing\s+date|dated\s+as\s+of)\s*[:\s]*"
-    r"(" + _DATE_RE.pattern + r")",
-    re.IGNORECASE,
-)
+_DATE_RE = DATE_RE
+_MATURITY_RE = MATURITY_RE
+_EFFECTIVE_RE = EFFECTIVE_RE
 
 
 # ---------------------------------------------------------------------------
@@ -135,12 +99,9 @@ def extract_facilities(
         One :class:`Facility` per detected tranche.
     """
     # Determine focus regions
-    candidate_sections = (
-        find_section_by_keyword(sections, "COMMITMENT")
-        + find_section_by_keyword(sections, "FACILITY")
-        + find_section_by_keyword(sections, "LOAN")
-        + find_section_by_keyword(sections, "THE CREDITS")
-    )
+    candidate_sections = []
+    for kw in SECTION_KEYWORDS["facility"]:
+        candidate_sections += find_section_by_keyword(sections, kw)
 
     if candidate_sections:
         focus_ranges = [
