@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 .env
 .DS_Store
+.claude/
 venv/
 .venv/
 output/json/*.json
