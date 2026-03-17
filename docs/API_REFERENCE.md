@@ -24,9 +24,11 @@ Detailed documentation for every Python module and function in the Credit Agreem
 - [src/parsing/schedule_extractor.py](#srcparsingschedule_extractorpy)
 - [src/knowledge_graph/builder.py](#srcknowledge_graphbuilderpy)
 - [src/knowledge_graph/queries.py](#srcknowledge_graphqueriespy)
+- [src/evaluation/golden_set_eval.py](#srcevaluationgolden_set_evalpy)
 - [src/llm/interface.py](#srcllminterfacepy)
 - [src/llm/config.py](#srcllmconfigpy)
 - [app/streamlit_app.py](#appstreamlit_apppy)
+- [scripts/evaluate_golden_set.py](#scriptsevaluate_golden_setpy)
 
 ---
 
@@ -1158,6 +1160,63 @@ No-op provider for v1.
 
 ---
 
+## `src/evaluation/golden_set_eval.py`
+
+Golden-set regression evaluation utilities for parser quality review.
+
+### Data Classes
+
+#### `ManifestEntry`
+
+Represents one manifest row:
+- `file_name: str` (required)
+- `focus: list[str]` (review intent notes)
+- `expected: dict[str, int]` (thresholds such as `min_parties`, `max_parties`, `min_facilities`)
+
+#### `EvaluationRow`
+
+Per-document evaluation output:
+- `file_name`, `status`
+- `party_count`, `facility_count`, `covenant_count`, `amendment_count`
+- `unknown_role_count`, `duplicate_party_count`
+- `anomalies: list[str]`
+- `focus: list[str]`
+
+### Functions
+
+#### `load_manifest(manifest_path)`
+
+Loads and validates `raw_documents/golden_set/golden_set_manifest.json` style manifests.
+
+**Returns:** `list[ManifestEntry]`
+
+#### `evaluate_manifest_entries(entries, pdf_dir, process_fn=process_document)`
+
+Runs parsing for each manifest entry and returns quality/anomaly rows.
+
+Anomalies include:
+- threshold misses (`party_count(40)>max_parties(15)`, etc.)
+- unknown party roles
+- duplicate party-role pairs
+- suspiciously high party counts (`>=150`)
+- processing errors / missing PDFs
+
+**Returns:** `list[EvaluationRow]`
+
+#### `evaluate_manifest(manifest_path, pdf_dir, process_fn=process_document)`
+
+Convenience wrapper: load manifest + evaluate all entries.
+
+#### `format_compact_table(rows)`
+
+Formats rows into fixed-width terminal table.
+
+#### `write_evaluation_csv(rows, output_path)`
+
+Writes evaluation rows to CSV (used by `scripts/evaluate_golden_set.py`).
+
+---
+
 ## `src/llm/config.py`
 
 LLM configuration — scaffold for v2.
@@ -1232,3 +1291,29 @@ Runs the parsing pipeline with real-time progress tracking.
 1. If "Process Document" clicked with an uploaded file: saves to temp file, runs pipeline.
 2. If "Process Selected" clicked with a dropdown selection: runs pipeline on the selected file from `raw_documents/pdf/`.
 3. Otherwise: shows info message prompting the user to upload or select a PDF.
+
+---
+
+## `scripts/evaluate_golden_set.py`
+
+CLI entrypoint for running parser QA across the golden set.
+
+### Command
+
+```bash
+venv/bin/python scripts/evaluate_golden_set.py --fail-on-anomaly
+```
+
+### Arguments
+
+- `--manifest` (default: `raw_documents/golden_set/golden_set_manifest.json`)
+- `--pdf-dir` (default: `raw_documents/golden_set/pdf`)
+- `--csv-out` (default: `output/golden_set/golden_set_eval.csv`)
+- `--no-csv` (print-only mode)
+- `--fail-on-anomaly` (non-zero exit if anomalies/errors exist)
+
+### Output
+
+- compact terminal table for quick triage
+- summary line with total docs, error count, docs-with-anomalies count
+- optional CSV artifact for spreadsheet review and diffs
