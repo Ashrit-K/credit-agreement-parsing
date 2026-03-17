@@ -199,6 +199,20 @@ Tests cover:
 - `test_pipeline.py` — End-to-end pipeline produces valid document and graph
 - `test_convert_htm_to_pdf.py` — HTML normalization and overflow-fix CSS injection
 - `test_party_extractor.py` — party false-positive regression controls
+- `test_golden_set_eval.py` — manifest-driven golden-set evaluation and anomaly flags
+
+### Golden Set Regression Review
+
+Run the parser across curated regression docs and flag suspicious outputs:
+
+```bash
+venv/bin/python scripts/evaluate_golden_set.py --fail-on-anomaly
+```
+
+Outputs:
+- terminal table with per-document counts and anomaly tags
+- CSV report at `output/golden_set/golden_set_eval.csv`
+- thresholds and review focus loaded from `raw_documents/golden_set/golden_set_manifest.json`
 
 ## Project Structure
 
