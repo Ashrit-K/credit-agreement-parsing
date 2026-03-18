@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable
@@ -28,6 +29,9 @@ class EvaluationRow:
     amendment_count: int = 0
     unknown_role_count: int = 0
     duplicate_party_count: int = 0
+    expected_party_count: int = 0
+    missing_expected_party_count: int = 0
+    unexpected_party_count: int = 0
     anomalies: list[str] = field(default_factory=list)
     focus: list[str] = field(default_factory=list)
 
@@ -41,6 +45,9 @@ class EvaluationRow:
             "amendment_count": self.amendment_count,
             "unknown_role_count": self.unknown_role_count,
             "duplicate_party_count": self.duplicate_party_count,
+            "expected_party_count": self.expected_party_count,
+            "missing_expected_party_count": self.missing_expected_party_count,
+            "unexpected_party_count": self.unexpected_party_count,
             "anomalies": "; ".join(self.anomalies),
             "focus": "; ".join(self.focus),
         }
@@ -52,6 +59,46 @@ _EXPECTED_FIELD_TO_METRIC = {
     "covenants": "covenant_count",
     "amendments": "amendment_count",
 }
+
+
+def load_expected_labels(expected_path: str | Path) -> dict[str, dict]:
+    """Load optional human-labeled expected outputs keyed by file name."""
+    path = Path(expected_path)
+    data = json.loads(path.read_text())
+    docs = data.get("documents")
+    if not isinstance(docs, list):
+        raise ValueError("Expected-label file must contain a 'documents' list.")
+
+    labels: dict[str, dict] = {}
+    for i, doc in enumerate(docs):
+        if not isinstance(doc, dict):
+            raise ValueError(f"documents[{i}] must be an object.")
+        file_name = str(doc.get("file_name", "")).strip()
+        if not file_name:
+            raise ValueError(f"documents[{i}].file_name is required.")
+
+        expected_parties: list[dict[str, str]] = []
+        for raw_party in doc.get("expected_parties", []) if isinstance(doc.get("expected_parties", []), list) else []:
+            if not isinstance(raw_party, dict):
+                continue
+            name = str(raw_party.get("name", "")).strip()
+            role = str(raw_party.get("role", "")).strip()
+            if name and role:
+                expected_parties.append({"name": name, "role": role})
+
+        expected_counts: dict[str, int] = {}
+        raw_counts = doc.get("expected_counts", {})
+        if isinstance(raw_counts, dict):
+            for key, value in raw_counts.items():
+                if isinstance(value, int):
+                    expected_counts[str(key)] = value
+
+        labels[file_name] = {
+            "expected_parties": expected_parties,
+            "expected_counts": expected_counts,
+        }
+
+    return labels
 
 
 def load_manifest(manifest_path: str | Path) -> list[ManifestEntry]:
@@ -145,10 +192,69 @@ def _threshold_anomalies(row: EvaluationRow, expected: dict[str, int]) -> list[s
     return anomalies
 
 
+def _normalized_party_key(name: str, role: str) -> tuple[str, str]:
+    # Canonicalize for review matching: ignore punctuation/spacing/case differences.
+    normalized_name = re.sub(r"[^a-z0-9]+", "", name.lower())
+    normalized_role = re.sub(r"[^a-z0-9]+", "", role.lower())
+    return normalized_name, normalized_role
+
+
+def _expected_label_anomalies(
+    row: EvaluationRow,
+    parties: Iterable,
+    expected_for_file: dict | None,
+) -> list[str]:
+    """Compare parser output against optional human-labeled expectations."""
+    if not expected_for_file:
+        return []
+
+    anomalies: list[str] = []
+
+    expected_parties = expected_for_file.get("expected_parties", [])
+    if isinstance(expected_parties, list) and expected_parties:
+        expected_set = {
+            _normalized_party_key(str(p.get("name", "")), str(p.get("role", "")))
+            for p in expected_parties
+            if isinstance(p, dict) and p.get("name") and p.get("role")
+        }
+        actual_set = {
+            _normalized_party_key(
+                str(getattr(party, "name", "")),
+                str(getattr(party, "role", "")),
+            )
+            for party in parties
+            if getattr(party, "name", "") and getattr(party, "role", "")
+        }
+
+        row.expected_party_count = len(expected_set)
+        missing = expected_set - actual_set
+        unexpected = actual_set - expected_set
+        row.missing_expected_party_count = len(missing)
+        row.unexpected_party_count = len(unexpected)
+
+        if missing:
+            anomalies.append(f"missing_expected_parties({len(missing)})")
+        if unexpected:
+            anomalies.append(f"unexpected_parties({len(unexpected)})")
+
+    expected_counts = expected_for_file.get("expected_counts", {})
+    if isinstance(expected_counts, dict):
+        for key, expected_value in expected_counts.items():
+            metric_name = _EXPECTED_FIELD_TO_METRIC.get(str(key))
+            if not metric_name or not isinstance(expected_value, int):
+                continue
+            actual_value = int(getattr(row, metric_name))
+            if actual_value != expected_value:
+                anomalies.append(f"{metric_name}({actual_value})!=expected_{key}({expected_value})")
+
+    return anomalies
+
+
 def evaluate_manifest_entries(
     entries: list[ManifestEntry],
     pdf_dir: str | Path,
     process_fn: Callable = process_document,
+    expected_labels: dict[str, dict] | None = None,
 ) -> list[EvaluationRow]:
     """Evaluate each manifest entry by running the parser once per file."""
     pdf_root = Path(pdf_dir)
@@ -206,6 +312,13 @@ def evaluate_manifest_entries(
             anomalies.append(f"duplicate_parties({duplicate_party_count})")
         if party_count >= 150:
             anomalies.append(f"party_count_suspiciously_high({party_count})")
+        anomalies.extend(
+            _expected_label_anomalies(
+                row=row,
+                parties=getattr(doc, "parties", []),
+                expected_for_file=(expected_labels or {}).get(entry.file_name),
+            )
+        )
 
         row.anomalies = anomalies
         rows.append(row)
@@ -217,10 +330,16 @@ def evaluate_manifest(
     manifest_path: str | Path,
     pdf_dir: str | Path,
     process_fn: Callable = process_document,
+    expected_labels: dict[str, dict] | None = None,
 ) -> list[EvaluationRow]:
     """Load manifest and evaluate all entries."""
     entries = load_manifest(manifest_path)
-    return evaluate_manifest_entries(entries=entries, pdf_dir=pdf_dir, process_fn=process_fn)
+    return evaluate_manifest_entries(
+        entries=entries,
+        pdf_dir=pdf_dir,
+        process_fn=process_fn,
+        expected_labels=expected_labels,
+    )
 
 
 def format_compact_table(rows: list[EvaluationRow]) -> str:
@@ -234,6 +353,8 @@ def format_compact_table(rows: list[EvaluationRow]) -> str:
         "amd",
         "unknown",
         "dup",
+        "miss_exp",
+        "unexp",
         "anomalies",
     ]
     data: list[list[str]] = []
@@ -248,6 +369,8 @@ def format_compact_table(rows: list[EvaluationRow]) -> str:
                 str(row.amendment_count),
                 str(row.unknown_role_count),
                 str(row.duplicate_party_count),
+                str(row.missing_expected_party_count),
+                str(row.unexpected_party_count),
                 "; ".join(row.anomalies),
             ]
         )
@@ -280,6 +403,9 @@ def write_evaluation_csv(rows: list[EvaluationRow], output_path: str | Path) -> 
         "amendment_count",
         "unknown_role_count",
         "duplicate_party_count",
+        "expected_party_count",
+        "missing_expected_party_count",
+        "unexpected_party_count",
         "anomalies",
         "focus",
     ]

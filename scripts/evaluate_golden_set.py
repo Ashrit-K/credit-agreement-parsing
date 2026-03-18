@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.evaluation.golden_set_eval import (
     evaluate_manifest,
     format_compact_table,
+    load_expected_labels,
     write_evaluation_csv,
 )
 
@@ -37,6 +38,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Where to save CSV report.",
     )
     parser.add_argument(
+        "--expected-labels",
+        type=Path,
+        default=Path("raw_documents/golden_set/expected_outputs.json"),
+        help="Optional human-labeled expected outputs for exact mismatch checks.",
+    )
+    parser.add_argument(
         "--no-csv",
         action="store_true",
         help="Skip CSV output and only print the terminal table.",
@@ -51,7 +58,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
-    rows = evaluate_manifest(manifest_path=args.manifest, pdf_dir=args.pdf_dir)
+    expected_labels = None
+    if args.expected_labels.exists():
+        expected_labels = load_expected_labels(args.expected_labels)
+    rows = evaluate_manifest(
+        manifest_path=args.manifest,
+        pdf_dir=args.pdf_dir,
+        expected_labels=expected_labels,
+    )
 
     print(format_compact_table(rows))
 

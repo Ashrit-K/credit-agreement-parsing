@@ -132,6 +132,24 @@ streamlit run app/streamlit_app.py
 # Opens at http://localhost:8501
 ```
 
+### Streamlit Golden-Set Labeler (Phase 1)
+
+```bash
+source venv/bin/activate
+streamlit run app/golden_set_labeler.py
+```
+
+Labeler workflow:
+- loads one golden-set PDF at a time
+- pre-fills parties/facilities/covenants/amendments from parser output
+- pre-fills provenance fields (`doc_id`, `page`, `block`, `line`, `provenance_id`, `text_snippet`)
+- reviewer sets `decision` (`pending`, `approved`, `rejected`) and optional notes
+- saves per-document label JSON under `raw_documents/golden_set/labels/`
+- exports evaluator-compatible expected outputs to `raw_documents/golden_set/expected_outputs.json`
+
+Design rationale:
+- `docs/architecture/golden-set-labeler-rationale.md`
+
 ### Python API — Single Document
 
 ```python
@@ -200,6 +218,7 @@ Tests cover:
 - `test_convert_htm_to_pdf.py` — HTML normalization and overflow-fix CSS injection
 - `test_party_extractor.py` — party false-positive regression controls
 - `test_golden_set_eval.py` — manifest-driven golden-set evaluation and anomaly flags
+- `test_golden_set_labels.py` — label prefill/persistence/export for annotation workflow
 
 ### Golden Set Regression Review
 
@@ -213,15 +232,19 @@ Outputs:
 - terminal table with per-document counts and anomaly tags
 - CSV report at `output/golden_set/golden_set_eval.csv`
 - thresholds and review focus loaded from `raw_documents/golden_set/golden_set_manifest.json`
+- optional exact-label scoring loaded from `raw_documents/golden_set/expected_outputs.json`
 
 ## Project Structure
 
 ```
 Credit_Agreement_Parsing/
 ├── app/
-│   └── streamlit_app.py          # Web UI
+│   ├── streamlit_app.py          # Parser UI
+│   └── golden_set_labeler.py     # Annotation UI (approve/edit/reject + provenance)
 ├── docs/
-│   └── API_REFERENCE.md          # Detailed module/function documentation
+│   ├── API_REFERENCE.md          # Detailed module/function documentation
+│   └── architecture/
+│       └── golden-set-labeler-rationale.md
 ├── src/
 │   ├── config.py                 # Paths, constants, .env loading
 │   ├── field_patterns.py         # Centralized synonyms & regex for all extractors
@@ -245,6 +268,9 @@ Credit_Agreement_Parsing/
 │   ├── knowledge_graph/
 │   │   ├── builder.py            # NetworkX DiGraph construction
 │   │   └── queries.py            # Graph query utilities
+│   ├── evaluation/
+│   │   ├── golden_set_eval.py    # Golden-set anomaly evaluation
+│   │   └── golden_set_labels.py  # Label storage + expected-output export
 │   └── llm/
 │       ├── interface.py          # Abstract LLMProvider (v2 scaffold)
 │       └── config.py             # API key loading (v2 scaffold)

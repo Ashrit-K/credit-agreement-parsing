@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "description": "Human-labeled expected outputs for golden-set regression scoring.",
+  "documents": [
+    {
+      "file_name": "011_credit_agreement.pdf",
+      "expected_parties": [],
+      "expected_counts": {}
+    },
+    {
+      "file_name": "010_KYN-Term-Loan-Agreement-Dated-8.6.21.pdf",
+      "expected_parties": [],
+      "expected_counts": {}
+    },
+    {
+      "file_name": "022_exhibit101-revolvingcredit.pdf",
+      "expected_parties": [],
+      "expected_counts": {}
+    },
+    {
+      "file_name": "029_exhibit101-firstamendmentt.pdf",
+      "expected_parties": [],
+      "expected_counts": {}
+    },
+    {
+      "file_name": "008_BAA_Redacted_Facility_Agreement.pdf",
+      "expected_parties": [],
+      "expected_counts": {}
+    },
+    {
+      "file_name": "003_first-lien-bridge-credit-agreement.pdf",
+      "expected_parties": [],
+      "expected_counts": {}
+    },
+    {
+      "file_name": "039_exhibit103-ablcreditagreem.pdf",
+      "expected_parties": [],
+      "expected_counts": {}
+    },
+    {
+      "file_name": "8-K-Term-Loan-Agreement-for-website.pdf",
+      "expected_parties": [],
+      "expected_counts": {}
+    },
+    {
+      "file_name": "049_Revolving_Facility_Agreement.pdf",
+      "expected_parties": [],
+      "expected_counts": {}
+    },
+    {
+      "file_name": "012_tmb-20250627xex10d1.pdf",
+      "expected_parties": [],
+      "expected_counts": {}
+    }
+  ]
+}
