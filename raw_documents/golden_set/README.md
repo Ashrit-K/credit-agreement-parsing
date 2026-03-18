@@ -24,6 +24,8 @@ Selected PDFs:
 Manifest:
 - `golden_set_manifest.json` contains per-document review focus and expected count thresholds
 - expected thresholds are used by `scripts/evaluate_golden_set.py` to flag extraction anomalies
+- `expected_outputs.json` is the human-labeled ground truth file (optional but recommended)
+  used for exact mismatch checks (missing expected parties, unexpected parties, count mismatches)
 
 Notes:
 - Files are physically moved here from `raw_documents/pdf/` and `raw_documents/htm/`.
@@ -34,3 +36,18 @@ Quick evaluation run:
 ```bash
 venv/bin/python scripts/evaluate_golden_set.py --fail-on-anomaly
 ```
+
+Annotation app (Phase 1):
+```bash
+venv/bin/streamlit run app/golden_set_labeler.py
+```
+
+Annotation outputs:
+- per-document labels: `raw_documents/golden_set/labels/<pdf-stem>.json`
+- exported expected outputs: `raw_documents/golden_set/expected_outputs.json`
+- each labeled row carries provenance fields (`doc_id`, `page`, `block`, `line`, `provenance_id`, `text_snippet`)
+
+Labeling notes:
+- Populate `expected_outputs.json` one file at a time.
+- `expected_parties` expects exact `{name, role}` pairs.
+- `expected_counts` can include any of: `parties`, `facilities`, `covenants`, `amendments`.

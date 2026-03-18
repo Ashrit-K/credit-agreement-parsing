@@ -25,9 +25,11 @@ Detailed documentation for every Python module and function in the Credit Agreem
 - [src/knowledge_graph/builder.py](#srcknowledge_graphbuilderpy)
 - [src/knowledge_graph/queries.py](#srcknowledge_graphqueriespy)
 - [src/evaluation/golden_set_eval.py](#srcevaluationgolden_set_evalpy)
+- [src/evaluation/golden_set_labels.py](#srcevaluationgolden_set_labelspy)
 - [src/llm/interface.py](#srcllminterfacepy)
 - [src/llm/config.py](#srcllmconfigpy)
 - [app/streamlit_app.py](#appstreamlit_apppy)
+- [app/golden_set_labeler.py](#appgolden_set_labelerpy)
 - [scripts/evaluate_golden_set.py](#scriptsevaluate_golden_setpy)
 
 ---
@@ -1179,6 +1181,7 @@ Per-document evaluation output:
 - `file_name`, `status`
 - `party_count`, `facility_count`, `covenant_count`, `amendment_count`
 - `unknown_role_count`, `duplicate_party_count`
+- `expected_party_count`, `missing_expected_party_count`, `unexpected_party_count`
 - `anomalies: list[str]`
 - `focus: list[str]`
 
@@ -1190,7 +1193,14 @@ Loads and validates `raw_documents/golden_set/golden_set_manifest.json` style ma
 
 **Returns:** `list[ManifestEntry]`
 
-#### `evaluate_manifest_entries(entries, pdf_dir, process_fn=process_document)`
+#### `load_expected_labels(expected_path)`
+
+Loads optional human-labeled expected outputs from
+`raw_documents/golden_set/expected_outputs.json`.
+
+Used for exact mismatch checks between parser output and expected labels.
+
+#### `evaluate_manifest_entries(entries, pdf_dir, process_fn=process_document, expected_labels=None)`
 
 Runs parsing for each manifest entry and returns quality/anomaly rows.
 
@@ -1199,11 +1209,13 @@ Anomalies include:
 - unknown party roles
 - duplicate party-role pairs
 - suspiciously high party counts (`>=150`)
+- missing expected parties / unexpected extracted parties
+- exact count mismatches against human labels
 - processing errors / missing PDFs
 
 **Returns:** `list[EvaluationRow]`
 
-#### `evaluate_manifest(manifest_path, pdf_dir, process_fn=process_document)`
+#### `evaluate_manifest(manifest_path, pdf_dir, process_fn=process_document, expected_labels=None)`
 
 Convenience wrapper: load manifest + evaluate all entries.
 
@@ -1214,6 +1226,57 @@ Formats rows into fixed-width terminal table.
 #### `write_evaluation_csv(rows, output_path)`
 
 Writes evaluation rows to CSV (used by `scripts/evaluate_golden_set.py`).
+
+---
+
+## `src/evaluation/golden_set_labels.py`
+
+Utilities for Phase 1 golden-set annotation storage and export.
+
+### Purpose
+
+- create/load per-document label JSON files from parser-prefilled rows
+- preserve row-level provenance (`doc_id`, `page`, `block`, `line`, `provenance_id`, `text_snippet`)
+- export approved labels into evaluator-compatible `expected_outputs.json`
+
+### Key Functions
+
+#### `list_golden_pdfs(pdf_dir=DEFAULT_PDF_DIR)`
+
+Returns sorted golden-set PDF paths.
+
+#### `prefill_label_payload(doc)`
+
+Builds a new label payload from parser output for sections:
+- `parties`
+- `facilities`
+- `covenants`
+- `amendments`
+
+Each row is initialized with:
+- `decision = "pending"`
+- `notes = ""`
+- provenance fields copied from source refs
+
+#### `get_label_path(file_name, labels_dir=DEFAULT_LABELS_DIR)`
+
+Returns per-document label file path (`<pdf-stem>.json`).
+
+#### `load_or_create_label(file_name, pdf_path, labels_dir=..., process_fn=process_document)`
+
+Loads existing label JSON, or runs parser once to generate a prefilled label file.
+
+#### `save_label(payload, label_path)`
+
+Saves label payload and updates `updated_at`.
+
+#### `export_expected_outputs(labels_dir=..., output_path=...)`
+
+Exports approved rows to `raw_documents/golden_set/expected_outputs.json`.
+
+Current export behavior:
+- `expected_parties`: only rows with `decision == "approved"`
+- `expected_counts`: copied from document-level `expected_counts`
 
 ---
 
@@ -1294,6 +1357,32 @@ Runs the parsing pipeline with real-time progress tracking.
 
 ---
 
+## `app/golden_set_labeler.py`
+
+Streamlit annotation UI for golden-set review (Phase 1).
+
+### Core UI Layout
+
+- Left pane: PDF render for selected document.
+- Right pane: editable tabs for `Parties`, `Facilities`, `Covenants`, `Amendments`, and `Counts`.
+- Sidebar: document queue selector with status and progress summary.
+
+### Workflow
+
+1. Select a golden-set document from queue.
+2. App loads existing label JSON or parser-prefills a new one.
+3. Reviewer sets row `decision` (`pending` / `approved` / `rejected`) and notes.
+4. Save per-document label file.
+5. Export consolidated expected outputs to `raw_documents/golden_set/expected_outputs.json`.
+
+### Data Integration
+
+- Label storage delegates to `src/evaluation/golden_set_labels.py`.
+- Evaluator consumption uses `scripts/evaluate_golden_set.py`.
+- Provenance is visible and editable per row in the UI.
+
+---
+
 ## `scripts/evaluate_golden_set.py`
 
 CLI entrypoint for running parser QA across the golden set.
@@ -1309,6 +1398,7 @@ venv/bin/python scripts/evaluate_golden_set.py --fail-on-anomaly
 - `--manifest` (default: `raw_documents/golden_set/golden_set_manifest.json`)
 - `--pdf-dir` (default: `raw_documents/golden_set/pdf`)
 - `--csv-out` (default: `output/golden_set/golden_set_eval.csv`)
+- `--expected-labels` (default: `raw_documents/golden_set/expected_outputs.json`)
 - `--no-csv` (print-only mode)
 - `--fail-on-anomaly` (non-zero exit if anomalies/errors exist)
 
@@ -1317,3 +1407,4 @@ venv/bin/python scripts/evaluate_golden_set.py --fail-on-anomaly
 - compact terminal table for quick triage
 - summary line with total docs, error count, docs-with-anomalies count
 - optional CSV artifact for spreadsheet review and diffs
+- if expected labels are provided, reports missing/unexpected party mismatches

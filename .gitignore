@@ -8,6 +8,7 @@ venv/
 output/json/*.json
 output/graphs/*.gexf
 output/graphs/*.json
+output/golden_set/*.csv
 *.egg-info/
 dist/
 build/
