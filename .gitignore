@@ -5,6 +5,7 @@ __pycache__/
 .claude/
 venv/
 .venv/
+.uv-cache/
 output/json/*.json
 output/graphs/*.gexf
 output/graphs/*.json
