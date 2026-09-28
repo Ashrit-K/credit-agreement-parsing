@@ -1,7 +1,7 @@
 # Party Extraction Scaffold Design
 
 **Date:** 2026-09-28  
-**Status:** Revised for Python-only pipeline; awaiting review
+**Status:** Approved for implementation
 
 ## Objective
 
