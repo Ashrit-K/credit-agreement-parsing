@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Structured extraction scaffold for credit agreements"
 requires-python = ">=3.11,<3.12"
 dependencies = [
+    "docling[rapidocr]>=2,<3",
     "pydantic>=2,<3",
     "pydantic-settings>=2,<3",
 ]
