@@ -95,6 +95,24 @@ page numbers or coordinates. Application code resolves cited identifiers and
 copies verified provenance into the structured result. Missing or uncertain
 required fields trigger broader retrieval from the topic map.
 
+Stage D uses independently testable extraction sleeves. Each sleeve owns one
+coherent field family, its system prompt, response schema, topic-map evidence
+packet, and validation rules. Initial sleeves cover parties, interest terms,
+maturity and extension, covenants, and repayment terms. A run may invoke only
+the sleeves required by the requested output, and additional sleeves can be
+added without redesigning the rest of the pipeline.
+
+Sleeves return a common result envelope containing structured values,
+uncertainty, and cited Docling item IDs. Each sleeve is validated independently;
+only a failed or incomplete sleeve broadens its evidence retrieval. Validated
+sleeve results are then merged into the requested document-level JSON.
+
+Stage C is a cross-cutting interface rather than a step in the document data
+flow. Every purple LLM box uses the shared routing and transport contract in
+Stage C, while supplying its own system prompt, evidence, and response schema.
+The diagram therefore keeps C isolated instead of routing document artifacts
+through its adapter boxes.
+
 ## Pipeline
 
 Status and cognitive work use separate visual signals:
@@ -135,7 +153,7 @@ flowchart TD
         B3[B3 — Batched cheap-LLM multi-label topic classification]
         B4[B4 — Build provenance-preserving topic map]
         B5[B5 — Retrieve topic-specific source evidence]
-        B6[B6 — Assemble extraction request from evidence and schema]
+        B6[B6 — Assemble topic-evidence bundle with source IDs]
         B1 -.-> B2
         B1 -.-> B3
         B2 -.-> B4
@@ -144,7 +162,7 @@ flowchart TD
         B5 -.-> B6
     end
 
-    subgraph C_GROUP["C — Model routing and transport"]
+    subgraph C_GROUP["C — Shared LLM interface logistics — cross-cutting"]
         C1[C1 — Default model and reasoning configuration]
         C2[C2 — Call-time model, reasoning, and API-style overrides]
         C3[C3 — OpenCode model router]
@@ -156,27 +174,44 @@ flowchart TD
         C3 -.-> C5
     end
 
-    subgraph D_GROUP["D — Party extraction and validation"]
-        D1[D1 — Party extraction LLM]
-        D2[D2 — Normalized LLM result]
-        D3[D3 — Decode JSON and validate with Pydantic]
-        D4{D4 — Required fields missing or uncertain?}
-        D5[D5 — Broaden topic-evidence retrieval]
-        D6[D6 — Resolve Docling item IDs to verified evidence]
-        D7[D7 — Validated borrower and lender JSON]
+    subgraph D_GROUP["D — Sleeve-based LLM extraction and validation"]
+        D1[D1 — Select requested extraction sleeves and schemas]
+        D2[D2 — Dispatch topic-map evidence to selected sleeves]
+        D3_1[D3.1 — Parties extraction sleeve]
+        D3_2[D3.2 — Interest terms extraction sleeve]
+        D3_3[D3.3 — Maturity and extension extraction sleeve]
+        D3_4[D3.4 — Covenants extraction sleeve]
+        D3_5[D3.5 — Repayment terms extraction sleeve]
+        D3_6[D3.6 — Additional field-family sleeves]
+        D4[D4 — Normalize sleeve result envelopes]
+        D5[D5 — Validate each sleeve schema and citations]
+        D6{D6 — Any sleeve missing, uncertain, or unsupported?}
+        D7[D7 — Broaden evidence for affected sleeves only]
+        D8[D8 — Resolve cited Docling item IDs to verified evidence]
+        D9[D9 — Merge validated sleeves into requested-data JSON]
         D1 -.-> D2
-        D2 -.-> D3
-        D3 -.-> D4
-        D4 -.->|Yes| D5
-        D4 -.->|No| D6
-        D6 -.-> D7
+        D2 -.-> D3_1
+        D2 -.-> D3_2
+        D2 -.-> D3_3
+        D2 -.-> D3_4
+        D2 -.-> D3_5
+        D2 -.-> D3_6
+        D3_1 -.-> D4
+        D3_2 -.-> D4
+        D3_3 -.-> D4
+        D3_4 -.-> D4
+        D3_5 -.-> D4
+        D3_6 -.-> D4
+        D4 -.-> D5
+        D5 -.-> D6
+        D6 -.->|Yes| D7
+        D6 -.->|No| D8
+        D8 -.-> D9
     end
 
     A11 -.-> B1
-    B6 -.-> C3
-    C4 -.-> D1
-    C5 -.-> D1
-    D5 -.-> B5
+    B6 -.-> D1
+    D7 -.-> B5
 
     classDef implemented fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1f2937;
     classDef pending fill:#f3f4f6,stroke:#6b7280,stroke-width:2px,stroke-dasharray:6 4,color:#1f2937;
@@ -185,8 +220,8 @@ flowchart TD
     classDef cognitivePending fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,stroke-dasharray:6 4,color:#1f2937;
 
     class A1,A2,A3,A3_1,A4,A5,A6,A7,A8,A9 implemented;
-    class A5_1,A10,A11,B1,B2,B4,B5,B6,C1,C2,C3,C4,C5,D2,D3,D4,D5,D6,D7 pending;
-    class B3,D1 cognitivePending;
+    class A5_1,A10,A11,B1,B2,B4,B5,B6,C1,C2,C3,C4,C5,D1,D2,D4,D5,D6,D7,D8,D9 pending;
+    class B3,D3_1,D3_2,D3_3,D3_4,D3_5,D3_6 cognitivePending;
 ```
 
 The current implementation still writes `manifest.json` as part of its A9
