@@ -31,6 +31,14 @@ asks for a new one.
 
 ## Visual contract
 
+- Divide a system into coherent major stages identified by capital letters,
+  such as `A — Intake` and `B — Extraction`.
+- Give every component and decision within a stage a visible letter-number
+  reference, such as `A1`, `A2`, and `B1`, so it can be cited unambiguously in
+  discussion and documentation.
+- Preserve published references when the flow remains recognizable. If a stage
+  is materially reorganized, renumber that stage cohesively and update nearby
+  prose references.
 - Implemented and verified deterministic nodes use green fill and solid borders.
 - Pending deterministic nodes use neutral gray fill and dashed borders.
 - LLM or other cognitive nodes use purple fill.
@@ -48,8 +56,8 @@ pending rather than being guessed.
 
 The canonical directory contains:
 
-- `SKILL.md` with the workflow, visual contract, Mermaid class definitions, a
-  compact example, and common mistakes.
+- `SKILL.md` with the workflow, grouping and numbering rules, visual contract,
+  Mermaid class definitions, a compact example, and common mistakes.
 - `agents/openai.yaml` with Codex-facing display metadata and normal implicit
   discovery enabled.
 

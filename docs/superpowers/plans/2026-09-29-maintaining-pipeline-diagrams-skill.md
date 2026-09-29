@@ -15,6 +15,7 @@
 - Maintain one canonical copy; do not duplicate the skill across runtimes.
 - A node or connection becomes implemented only when code, tests, or equivalent execution evidence verifies it.
 - Preserve the approved green/gray/purple and solid/dashed visual contract.
+- Group major stages with capital letters and number every box or decision within its stage.
 - Do not alter project source documents or unrelated global skills.
 
 ---
@@ -28,7 +29,7 @@
 
 **Interfaces:**
 - Consumes: a Mermaid pipeline diagram or a description of pipeline components and their verified status.
-- Produces: a created or updated Mermaid diagram with a textual legend and consistent node/link status semantics.
+- Produces: a created or updated Mermaid diagram with lettered stages, numbered components, a textual legend, and consistent node/link status semantics.
 
 - [ ] **Step 1: Run the baseline scenario without the skill**
 
@@ -43,7 +44,7 @@ for a project architecture document.
 ```
 
 Save its response to `/tmp/maintaining-pipeline-diagrams-test/baseline.md` and
-record whether it independently satisfies all six visual-contract rules from
+record whether it independently satisfies all visual-contract rules from
 the design spec. Expected: at least one rule is absent or ambiguous, proving
 that the skill supplies non-obvious reusable guidance.
 
@@ -76,8 +77,14 @@ is cognitive.
 4. Classify each node as deterministic or cognitive, then as implemented and
    verified or pending.
 5. Classify each connection as wired and verified or pending.
-6. Update the diagram and its concise text legend together.
-7. Render or parse-check Mermaid when a suitable tool is available.
+6. Divide the system into coherent major stages labeled `A`, `B`, `C`, and so
+   on. Give every component and decision a visible stage-local reference such
+   as `A1`, `A2`, or `B1`.
+7. Preserve existing references when the flow remains recognizable. If a stage
+   is materially reorganized, renumber that stage cohesively and update nearby
+   prose references.
+8. Update the diagram and its concise text legend together.
+9. Render or parse-check Mermaid when a suitable tool is available.
 
 Uncertain status remains pending. Never infer implementation from a roadmap,
 stub, filename, or prose claim alone.
@@ -86,6 +93,8 @@ stub, filename, or prose claim alone.
 
 | Meaning | Appearance |
 |---|---|
+| Major stage | Capital letter and descriptive subgraph title |
+| Component or decision | Visible stage letter plus sequence number |
 | Implemented deterministic node | Green fill, solid green border |
 | Pending deterministic node | Neutral gray fill, dashed gray border |
 | Implemented cognitive node | Purple fill, solid purple border |
@@ -110,17 +119,25 @@ whether it is implemented.
 
 ```mermaid
 flowchart LR
-    A[Upload] --> B[Parse document]
-    B -.-> C[LLM relevance selector]
-    C -.-> D[Validate JSON]
+    subgraph A_GROUP["A — Document intake"]
+        A1[A1 — Upload] --> A2[A2 — Parse document]
+    end
+
+    subgraph B_GROUP["B — Extraction"]
+        B1[B1 — LLM relevance selector]
+        B2[B2 — Validate JSON]
+        B1 -.-> B2
+    end
+
+    A2 -.-> B1
 
     classDef implemented fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1f2937;
     classDef pending fill:#f3f4f6,stroke:#6b7280,stroke-width:2px,stroke-dasharray:6 4,color:#1f2937;
     classDef cognitivePending fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,stroke-dasharray:6 4,color:#1f2937;
 
-    class A,B implemented;
-    class C cognitivePending;
-    class D pending;
+    class A1,A2 implemented;
+    class B1 cognitivePending;
+    class B2 pending;
 ```
 
 Legend: solid means implemented and verified; dashed means pending; purple
@@ -134,6 +151,9 @@ means LLM or cognitive inference.
 - Do not make an arrow solid when the downstream integration is not wired and
   verified.
 - Do not silently change the visual vocabulary or omit the legend.
+- Do not leave a box or decision unnumbered in a multi-stage system.
+- Do not reuse one reference for two components.
+- Do not renumber stable components merely for cosmetic reasons.
 - Do not replace a useful detailed diagram with a simplified one unless asked.
 ```
 
@@ -165,10 +185,11 @@ Ask a new independent fresh-context agent to read the canonical `SKILL.md` and
 then run the exact scenario from Step 1. Save the response to
 `/tmp/maintaining-pipeline-diagrams-test/guided.md`.
 
-Expected: the output includes a concise legend, green solid implemented nodes,
-gray dashed pending deterministic nodes, a purple dashed selector node, solid
-arrows only between the verified upload and parsing stages, and dashed arrows
-for all pending flows.
+Expected: the output uses lettered stage groups and numbers every box or
+decision within its stage. It also includes a concise legend, green solid
+implemented nodes, gray dashed pending deterministic nodes, a purple dashed
+selector node, solid arrows only between the verified upload and parsing
+stages, and dashed arrows for all pending flows.
 
 - [ ] **Step 5: Compare results and refine only observed gaps**
 

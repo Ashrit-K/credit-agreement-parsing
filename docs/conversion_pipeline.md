@@ -64,6 +64,8 @@ to exclude evidence permanently.
 
 Status and cognitive work use separate visual signals:
 
+- Capital letters identify major stages; the number identifies a component or
+  decision within that stage, such as `B3`.
 - Solid borders and arrows mean implemented and tested.
 - Dashed borders and arrows mean pending.
 - Purple boxes identify LLM or other cognitive inference steps, regardless of
@@ -73,45 +75,72 @@ The diagram is updated as each increment is completed.
 
 ```mermaid
 flowchart TD
-    A[PDF, HTML, or HTM path] --> B[Validate and calculate SHA-256]
-    B --> C{Complete cached artifacts?}
-    C -->|Yes| J[Return ConversionArtifact]
-    C -->|No| D{Content type}
-    D -->|PDF| E[Docling PDF pipeline and local English OCR]
-    D -->|Plain HTML| F[Docling HTML pipeline]
-    D -->|Gzip-wrapped HTML| G[Temporary local decompression]
-    G --> F
-    E --> H[Canonical DoclingDocument]
-    F --> H
-    H --> I[Write Docling JSON, Markdown, and manifest]
-    I --> J
+    subgraph A_GROUP["A — Document intake and conversion"]
+        A1[A1 — PDF, HTML, or HTM path] --> A2[A2 — Validate and calculate SHA-256]
+        A2 --> A3{A3 — Complete cached artifacts?}
+        A3 -->|Yes| A10[A10 — Return ConversionArtifact]
+        A3 -->|No| A4{A4 — Content type}
+        A4 -->|PDF| A5[A5 — Docling PDF pipeline and local English OCR]
+        A4 -->|Plain HTML| A6[A6 — Docling HTML pipeline]
+        A4 -->|Gzip-wrapped HTML| A7[A7 — Temporary local decompression]
+        A7 --> A6
+        A5 --> A8[A8 — Canonical DoclingDocument]
+        A6 --> A8
+        A8 --> A9[A9 — Write Docling JSON, Markdown, and manifest]
+        A9 --> A10
+    end
 
-    J -.-> K[Build chunks retaining Docling item IDs]
-    K -.-> DS[Add mandatory structural candidates]
-    K -.-> S[Cheap LLM relevance pass over every chunk]
-    DS -.-> U[Union candidate evidence set]
-    S -.-> U
-    U -.-> R[OpenCode model router]
-    O[Default: gpt-5.6-luna and medium reasoning] -.-> R
-    P[Call-time model, reasoning, and API-style overrides] -.-> R
-    R -.-> RA[Responses API adapter]
-    R -.-> CA[Chat Completions API adapter]
-    RA -.-> X[Party extraction LLM]
-    CA -.-> X
-    X -.-> LR[Normalized LLM result]
-    LR -.-> V[Decode JSON and validate with Pydantic]
-    V -.-> Q{Required fields missing or uncertain?}
-    Q -.->|Yes| W[Broaden chunks and rerun selector]
-    W -.-> S
-    Q -.->|No| M[Resolve Docling item IDs to verified evidence]
-    M -.-> N[Validated borrower and lender JSON]
+    subgraph B_GROUP["B — Evidence candidate selection"]
+        B1[B1 — Build chunks retaining Docling item IDs]
+        B2[B2 — Add mandatory structural candidates]
+        B3[B3 — Cheap LLM relevance pass over every chunk]
+        B4[B4 — Union candidate evidence set]
+        B1 -.-> B2
+        B1 -.-> B3
+        B2 -.-> B4
+        B3 -.-> B4
+    end
+
+    subgraph C_GROUP["C — Model routing and transport"]
+        C1[C1 — Default: gpt-5.6-luna and medium reasoning]
+        C2[C2 — Call-time model, reasoning, and API-style overrides]
+        C3[C3 — OpenCode model router]
+        C4[C4 — Responses API adapter]
+        C5[C5 — Chat Completions API adapter]
+        C1 -.-> C3
+        C2 -.-> C3
+        C3 -.-> C4
+        C3 -.-> C5
+    end
+
+    subgraph D_GROUP["D — Party extraction and validation"]
+        D1[D1 — Party extraction LLM]
+        D2[D2 — Normalized LLM result]
+        D3[D3 — Decode JSON and validate with Pydantic]
+        D4{D4 — Required fields missing or uncertain?}
+        D5[D5 — Broaden chunks and rerun selector]
+        D6[D6 — Resolve Docling item IDs to verified evidence]
+        D7[D7 — Validated borrower and lender JSON]
+        D1 -.-> D2
+        D2 -.-> D3
+        D3 -.-> D4
+        D4 -.->|Yes| D5
+        D4 -.->|No| D6
+        D6 -.-> D7
+    end
+
+    A10 -.-> B1
+    B4 -.-> C3
+    C4 -.-> D1
+    C5 -.-> D1
+    D5 -.-> B3
 
     classDef implemented fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1f2937;
     classDef pending fill:#f3f4f6,stroke:#6b7280,stroke-width:2px,stroke-dasharray:6 4,color:#1f2937;
     classDef cognitiveImplemented fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,color:#1f2937;
     classDef cognitivePending fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,stroke-dasharray:6 4,color:#1f2937;
 
-    class A,B,C,D,E,F,G,H,I,J implemented;
-    class K,DS,U,R,O,P,RA,CA,LR,V,Q,W,M,N pending;
-    class S,X cognitivePending;
+    class A1,A2,A3,A4,A5,A6,A7,A8,A9,A10 implemented;
+    class B1,B2,B4,C1,C2,C3,C4,C5,D2,D3,D4,D5,D6,D7 pending;
+    class B3,D1 cognitivePending;
 ```
