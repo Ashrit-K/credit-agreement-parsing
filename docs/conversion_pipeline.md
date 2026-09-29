@@ -85,7 +85,7 @@ flowchart TD
         A1[A1 — PDF, HTML, or HTM path] --> A2[A2 — Validate and calculate SHA-256]
         A2 --> A3{A3 — Complete cached artifacts? Development only}
         A3 -->|Yes — temporary development shortcut| A10[A10 — Return ConversionArtifact]
-        A3 -->|No — cache miss| A4{A4 — Content type}
+        A3 -->|No — cache miss| A4{A4 — Document format router}
         A2 -.->|Target production route — bypass cache| A4
         A4 -->|PDF| A5[A5 — Docling PDF pipeline and local English OCR]
         A4 -->|Plain HTML| A6[A6 — Docling HTML pipeline]
