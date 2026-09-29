@@ -22,6 +22,12 @@ fingerprint: the function calculates it from the source bytes. Repeating a call
 with identical source bytes reuses a complete cached conversion only when its
 conversion-profile identifier also matches the current settings.
 
+This cache short circuit is currently a development optimization that reduces
+latency while the pipeline is being built and tested. It is not the intended
+default production route: absent an explicit production cache policy, a
+production run should continue through content-type routing and conversion so
+the submitted document is processed in that run.
+
 ## Generated artifacts
 
 - `document.docling.json` is the canonical conversion. It retains Docling's
@@ -77,9 +83,10 @@ The diagram is updated as each increment is completed.
 flowchart TD
     subgraph A_GROUP["A — Document intake and conversion"]
         A1[A1 — PDF, HTML, or HTM path] --> A2[A2 — Validate and calculate SHA-256]
-        A2 --> A3{A3 — Complete cached artifacts?}
-        A3 -->|Yes| A10[A10 — Return ConversionArtifact]
-        A3 -->|No| A4{A4 — Content type}
+        A2 --> A3{A3 — Complete cached artifacts? Development only}
+        A3 -->|Yes — temporary development shortcut| A10[A10 — Return ConversionArtifact]
+        A3 -->|No — cache miss| A4{A4 — Content type}
+        A2 -.->|Target production route — bypass cache| A4
         A4 -->|PDF| A5[A5 — Docling PDF pipeline and local English OCR]
         A4 -->|Plain HTML| A6[A6 — Docling HTML pipeline]
         A4 -->|Gzip-wrapped HTML| A7[A7 — Temporary local decompression]
