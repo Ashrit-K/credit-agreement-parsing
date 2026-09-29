@@ -14,3 +14,4 @@ output/golden_set/*.csv
 dist/
 build/
 .pytest_cache/
+tmp/converted/
