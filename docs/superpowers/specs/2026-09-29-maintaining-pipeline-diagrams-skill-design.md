@@ -21,11 +21,13 @@ runtimes.
 
 ## Trigger and scope
 
-The skill applies when an agent creates or updates a Mermaid architecture,
-workflow, or pipeline diagram that communicates both implementation status and
-cognitive or LLM involvement. It should update an existing authoritative
-diagram instead of creating competing diagrams unless the user asks for a new
-view.
+The skill applies whenever an agent begins building or materially extending a
+system with four or more interacting components. It also applies when an agent
+is explicitly asked to create or update a Mermaid architecture, workflow, or
+pipeline diagram. The agent should create one authoritative diagram early,
+then maintain it as implementation progresses. If an authoritative diagram
+already exists, update it instead of creating a competing view unless the user
+asks for a new one.
 
 ## Visual contract
 
@@ -67,7 +69,7 @@ Before deployment:
 
 ## Boundaries
 
-The skill does not decide product architecture, declare work implemented without
-evidence, alter source code, or require every project to use this visual system.
-It applies when this status-aware Mermaid convention is requested or already in
-use.
+The skill does not decide product architecture, declare work implemented
+without evidence, or alter source code. Systems with three or fewer interacting
+components do not trigger it automatically, though a user may still request the
+convention explicitly.
