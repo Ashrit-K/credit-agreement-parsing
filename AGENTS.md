@@ -46,9 +46,9 @@ For A10:
 
 Planned Stage B begins with page-first chunks retaining Docling item IDs, page numbers, neighbor links, tables/lists, and optional A10 hierarchy context. Deterministic topic signals and a batched inexpensive LLM classifier will feed a provenance-preserving topic map. The map must point to original source items rather than replace them with summaries.
 
-Planned Stage C routes OpenCode requests through explicit, tested model-to-API mappings. The agreed default is `gpt-5.6-luna` with medium reasoning, with call-time overrides for model, reasoning effort, and API style. Support Responses and Chat Completions adapters; Claude/Messages support is not currently required.
+Stage C is a cross-cutting LLM interface, not a sequential document-processing stage. It routes OpenCode requests through explicit, tested model-to-API mappings. The agreed default is `gpt-5.6-luna` with medium reasoning, with call-time overrides for model, reasoning effort, and API style. Support Responses and Chat Completions adapters; Claude/Messages support is not currently required. Every purple LLM box uses this shared transport contract with its own system prompt, evidence, and response schema; do not route document artifacts through C in the pipeline diagram.
 
-Planned Stage D first extracts borrower, lender, parent, and relationship information, validates the LLM JSON with Pydantic, and resolves cited Docling item IDs to verified evidence. Missing or uncertain required fields broaden topic-map retrieval rather than inventing a value.
+Planned Stage D is sleeve-based LLM extraction. Each independently testable sleeve owns one coherent field family, system prompt, output schema, topic-map evidence packet, and validation rules. Initial sleeves cover parties, interest terms, maturity and extension, covenants, and repayment terms; add further field-family sleeves without redesigning the pipeline. Run only the sleeves requested for a job. Require a shared result envelope with structured values, uncertainty, and cited Docling item IDs. Validate each sleeve independently, broaden topic-map retrieval only for affected sleeves, resolve citations to verified evidence, and merge validated sleeves into the requested document-level JSON.
 
 ## Source Documents
 
