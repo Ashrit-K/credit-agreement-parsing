@@ -192,7 +192,16 @@ credit agreement.
 
 The maintained diagram lives in `docs/conversion_pipeline.md`. Solid arrows mean
 the connected stages are implemented and tested. Dashed arrows mean the stage or
-connection remains pending. When this increment is implemented, the model
-router and both API adapters become solid; paragraph selection, party prompting,
-Pydantic party validation, evidence resolution, and final extraction remain
-dashed.
+connection remains pending. Solid or dashed node borders repeat the same status
+signal. Purple node fill independently identifies LLM/cognitive inference.
+
+The pending extraction design chunks every Docling item, runs a cheap selector
+LLM over all chunks, and unions its high-recall selections with mandatory
+structural candidates. This can improve recall but cannot guarantee it; misses
+must be measured on representative agreements, and missing or uncertain required
+fields trigger broader retrieval. This selector remains outside the transport
+increment defined here.
+
+When this increment is implemented, the model router and both API adapters
+become solid. Chunking, selector inference, party prompting, Pydantic party
+validation, evidence resolution, and final extraction remain dashed.
