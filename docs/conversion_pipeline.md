@@ -51,6 +51,10 @@ extraction result.
 
 ## Pipeline
 
+Solid arrows connect stages that are implemented and tested. Dashed arrows mark
+pending stages or integrations. The diagram is updated as each increment is
+completed.
+
 ```mermaid
 flowchart TD
     A[PDF, HTML, or HTM path] --> B[Validate and calculate SHA-256]
@@ -65,8 +69,15 @@ flowchart TD
     F --> H
     H --> I[Write Docling JSON, Markdown, and manifest]
     I --> J
-    J --> K[Future paragraph selection with Docling item IDs]
-    K --> L[Future LLM party extraction]
-    L --> M[Resolve IDs to verified page and bounding-box evidence]
-    M --> N[Validated borrower and lender JSON]
+    J -.-> K[Select relevant paragraphs with Docling item IDs]
+    K -.-> R[OpenCode model router]
+    O[Default: gpt-5.6-luna and medium reasoning] -.-> R
+    P[Call-time model, reasoning, and API-style overrides] -.-> R
+    R -.-> RA[Responses API adapter]
+    R -.-> CA[Chat Completions API adapter]
+    RA -.-> LR[Normalized LLM result]
+    CA -.-> LR
+    LR -.-> V[Decode JSON and validate with Pydantic]
+    V -.-> M[Resolve Docling item IDs to verified evidence]
+    M -.-> N[Validated borrower and lender JSON]
 ```
