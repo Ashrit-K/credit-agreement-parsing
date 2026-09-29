@@ -50,12 +50,18 @@ Docling, and removes that copy afterward. It never rewrites the source file.
 ## Evidence rule
 
 Future extraction code should chunk all text from the canonical JSON while
-retaining the corresponding Docling item identifiers, such as `#/texts/17`. A
-cheap selector LLM will review every chunk and over-select items that may support
-the requested fields. Deterministic structural candidates, such as the opening
-party block, definitions, lender tables, guarantor provisions, and signature
-blocks, are unioned with the LLM selections so the selector cannot discard those
-anchors.
+retaining the corresponding Docling item identifiers, such as `#/texts/17`.
+Before chunking, a provisional hierarchy-reconstruction step will traverse the
+Docling reading order and maintain the active section, clause, and subclause
+headings. It will distinguish the physical PDF page from any printed page number
+captured in page furniture. The exact hierarchy algorithm and output shape remain
+subject to validation across the corpus.
+
+A cheap selector LLM will review every resulting chunk and over-select items
+that may support the requested fields. Deterministic structural candidates,
+such as the opening party block, definitions, lender tables, guarantor
+provisions, and signature blocks, are unioned with the LLM selections so the
+selector cannot discard those anchors.
 
 The extraction LLM may cite retained item identifiers, but it must not invent
 page numbers or coordinates. Application code will resolve every cited item and
@@ -74,6 +80,8 @@ Status and cognitive work use separate visual signals:
   decision within that stage, such as `B3`.
 - Solid borders and arrows mean implemented and tested.
 - Dashed borders and arrows mean pending.
+- Amber boxes identify provisional planned steps whose design is still subject
+  to change.
 - Purple boxes identify LLM or other cognitive inference steps, regardless of
   implementation status.
 
@@ -98,14 +106,16 @@ flowchart TD
     end
 
     subgraph B_GROUP["B — Evidence candidate selection"]
-        B1[B1 — Build chunks retaining Docling item IDs]
-        B2[B2 — Add mandatory structural candidates]
-        B3[B3 — Cheap LLM relevance pass over every chunk]
-        B4[B4 — Union candidate evidence set]
+        B1[B1 — Reconstruct section, clause, subclause, and page hierarchy]
+        B2[B2 — Build chunks retaining Docling item IDs and hierarchy]
+        B3[B3 — Add mandatory structural candidates]
+        B4[B4 — Cheap LLM relevance pass over every chunk]
+        B5[B5 — Union candidate evidence set]
         B1 -.-> B2
-        B1 -.-> B3
+        B2 -.-> B3
         B2 -.-> B4
-        B3 -.-> B4
+        B3 -.-> B5
+        B4 -.-> B5
     end
 
     subgraph C_GROUP["C — Model routing and transport"]
@@ -137,17 +147,19 @@ flowchart TD
     end
 
     A10 -.-> B1
-    B4 -.-> C3
+    B5 -.-> C3
     C4 -.-> D1
     C5 -.-> D1
-    D5 -.-> B3
+    D5 -.-> B4
 
     classDef implemented fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1f2937;
     classDef pending fill:#f3f4f6,stroke:#6b7280,stroke-width:2px,stroke-dasharray:6 4,color:#1f2937;
+    classDef provisionalPending fill:#fff7ed,stroke:#ea580c,stroke-width:2px,stroke-dasharray:6 4,color:#1f2937;
     classDef cognitiveImplemented fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,color:#1f2937;
     classDef cognitivePending fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,stroke-dasharray:6 4,color:#1f2937;
 
     class A1,A2,A3,A4,A5,A6,A7,A8,A9,A10 implemented;
-    class B1,B2,B4,C1,C2,C3,C4,C5,D2,D3,D4,D5,D6,D7 pending;
-    class B3,D1 cognitivePending;
+    class B2,B3,B5,C1,C2,C3,C4,C5,D2,D3,D4,D5,D6,D7 pending;
+    class B1 provisionalPending;
+    class B4,D1 cognitivePending;
 ```
