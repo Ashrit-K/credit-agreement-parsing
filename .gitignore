@@ -15,3 +15,7 @@ dist/
 build/
 .pytest_cache/
 tmp/converted/
+:memory:.ses
+tmp/hierarchy_experiment.py
+tmp/hierarchy_experiment_output/
+tmp/pdfs/

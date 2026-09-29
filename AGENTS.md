@@ -1,0 +1,85 @@
+# Credit Agreement Parser — Project Instructions
+
+## Mission
+
+Build a system that accepts a credit agreement PDF and returns structured JSON. Target information includes:
+
+- Borrower and lender details
+- Interest terms and interest-payment terms
+- Principal, repayment, and amortization terms
+- Call protection
+- Covenants and other material agreement terms
+
+LLMs are intended to participate in topic classification and legal-term extraction. The current architecture is a staged pipeline; autonomous-agent or hybrid orchestration remains an open later decision and must not be assumed.
+
+## Current Architecture Snapshot
+
+The authoritative numbered architecture and implementation status live in `docs/conversion_pipeline.md`. Preserve its conventions:
+
+- Solid boxes and arrows are implemented and tested.
+- Dashed boxes and arrows are pending.
+- Purple boxes are LLM or other cognitive steps.
+- Component IDs such as `A10` and `B3` are stable review references. Do not silently renumber them.
+
+Implemented Stage A behavior currently includes:
+
+- Python 3.11 and uv-based development.
+- `convert_document(path)` support for PDF, HTML, and HTM input.
+- Local Docling conversion, with English RapidOCR available for PDFs.
+- Gzip magic-byte detection and temporary decompression for compressed SEC `.htm` files.
+- Canonical `document.docling.json`, derived `document.md`, and `manifest.json` artifacts under `tmp/converted/<source-sha256>/`.
+- A development-only cache shortcut keyed by source SHA-256 and conversion profile.
+
+The next frozen Stage A increment is pending, not implemented:
+
+- `A5.1`: enable Docling's built-in PDF heading-hierarchy inference and parsed-page generation.
+- `A10`: read the unchanged canonical Docling JSON and write a versioned `document.hierarchy.json` sidecar keyed by canonical item IDs.
+- `A11`: finalize the manifest only after every artifact exists and return an enriched `ConversionArtifact`.
+
+For A10:
+
+- Preserve Docling container ancestry, reading order, generic numeric heading paths, and canonical page provenance.
+- Keep `document.docling.json` canonical and unchanged; do not build a replacement document or custom PDF-layout parser.
+- Treat hierarchy as optional context that can never discard, reorder, or summarize source content.
+- Limit initial hierarchy warnings to `no_headings`, `flat_levels`, `skipped_levels`, and `non_monotonic_pages`.
+- Treat broken references, malformed heading levels, and cycles as errors rather than warnings.
+
+Planned Stage B begins with page-first chunks retaining Docling item IDs, page numbers, neighbor links, tables/lists, and optional A10 hierarchy context. Deterministic topic signals and a batched inexpensive LLM classifier will feed a provenance-preserving topic map. The map must point to original source items rather than replace them with summaries.
+
+Planned Stage C routes OpenCode requests through explicit, tested model-to-API mappings. The agreed default is `gpt-5.6-luna` with medium reasoning, with call-time overrides for model, reasoning effort, and API style. Support Responses and Chat Completions adapters; Claude/Messages support is not currently required.
+
+Planned Stage D first extracts borrower, lender, parent, and relationship information, validates the LLM JSON with Pydantic, and resolves cited Docling item IDs to verified evidence. Missing or uncertain required fields broaden topic-map retrieval rather than inventing a value.
+
+## Source Documents
+
+- `raw_documents/pdf/` and `raw_documents/htm/` are the preserved source corpus and ground truth.
+- Treat source documents as immutable. Do not delete, rename, overwrite, or silently transform them.
+- Put generated text, intermediate files, and extraction results outside `raw_documents/`.
+- Ask before adding, replacing, or removing corpus documents.
+
+## Extraction Quality
+
+- Keep evidence with extracted facts when available: document, page, section, and concise source excerpt.
+- Distinguish missing, uncertain, and not-applicable values; do not invent values or confuse absence with zero or false.
+- Prefer transparent normalization while retaining source wording needed to verify the result.
+- Avoid document-specific hardcoding. Check behavior across materially different agreements before treating a rule as general.
+
+## Working Method
+
+- Work in small, reviewable steps; define and validate one outcome at a time.
+- For material behavior or architecture changes, clarify requirements and agree on a short design before implementation.
+- Keep PDF parsing, legal-term extraction, LLM reasoning, JSON validation, and evidence capture as independently testable concerns where practical.
+- Use representative documents and regression checks as the corpus grows; report uncertainty and observed failure cases.
+- Do not treat a pending diagram component as implemented until its acceptance checks pass and the diagram and backlog are updated.
+- Do not select a final extraction schema or agent topology before evidence and user agreement support that decision.
+
+## Build Tracking
+
+- `docs/conversion_pipeline.md` is the authoritative architecture and status diagram.
+- `docs/build_backlog.md` is the registry for agreed but unimplemented components.
+- `docs/superpowers/plans/2026-09-29-a10-hierarchy-sidecar.md` is the approved A5.1/A10/A11 implementation plan.
+- When a tracked component begins or finishes, update the backlog and pipeline diagram in the same change.
+
+## Project Note
+
+Maintain project context in the Obsidian note: [Credit Agreement Parser](file:///Users/ashrit/Library/Mobile%20Documents/iCloud~md~obsidian/Documents/Obsidian_ashrit/Projects/Credit%20Agreement%20Parser.md).
