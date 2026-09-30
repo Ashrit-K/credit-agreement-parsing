@@ -19,12 +19,14 @@ component IDs match the authoritative diagram in
 
 | ID | Status | Component | Frozen outcome | Dependencies | Implementation plan |
 | --- | --- | --- | --- | --- | --- |
-| A5.1 | Implemented | Enable Docling heading hierarchy during PDF extraction | Configure Docling's built-in heading-hierarchy inference and parsed-page generation so the canonical Docling export retains all structure Docling can recover. Record the configuration in the conversion profile and manifest. Do not add a custom document-layout parser. | Existing A5 PDF conversion | [A10 hierarchy-sidecar plan](superpowers/plans/2026-09-29-a10-hierarchy-sidecar.md), Task 1 |
-| A10 | Pending | Build versioned hierarchy sidecar | Read the unchanged canonical Docling JSON and write `document.hierarchy.json`, keyed by canonical item IDs, with generic heading paths, page provenance, and the four frozen warning codes. Preserve source text and reading order; treat broken references and cycles as errors. | A5.1 and A9 | [A10 hierarchy-sidecar plan](superpowers/plans/2026-09-29-a10-hierarchy-sidecar.md) |
+| A5 | Implemented | Docling PDF conversion pipeline | Run local English OCR, enable Docling's built-in heading-hierarchy inference and parsed-page generation, and record the configuration in the conversion profile and manifest. Do not add a custom document-layout parser. | A4 document format router | [A10 hierarchy-sidecar plan](superpowers/plans/2026-09-29-a10-hierarchy-sidecar.md), Task 1 |
+| A10 | Implemented | Build versioned hierarchy sidecar mapping | Transform unchanged canonical Docling JSON into a schema-versioned mapping keyed by canonical item IDs, with generic heading paths, page provenance, and the four frozen warning codes. Preserve source content and reading order; treat broken references and cycles as errors. | A5 and A9 canonical output | [A10 hierarchy-sidecar plan](superpowers/plans/2026-09-29-a10-hierarchy-sidecar.md), Task 2 |
+| A11 | Implemented | Persist sidecar and finalize Stage A artifact | Call A10 after canonical serialization, write `document.hierarchy.json`, finalize the manifest only after all artifacts exist, return an enriched `ConversionArtifact`, and require the sidecar for cache completeness. | A10 | [A10 hierarchy-sidecar plan](superpowers/plans/2026-09-29-a10-hierarchy-sidecar.md), Tasks 3-4 |
+| B1 | Pending | Build page-first provenance-preserving chunks | Consume the completed Stage A canonical JSON and hierarchy sidecar through a pure chunk builder plus persistence wrapper. Write `tmp/stage_b/<source-sha256>/document.chunks.json`; use page boundaries for paged documents and a 12,000-character reading-order fallback for page-less documents; keep canonical leaves, tables, and explicit Docling lists atomic; preserve item IDs, source wording, hierarchy context, and deterministic neighbor links without overlap or invented provenance. | A11 completed Stage A artifact | [B1 page-first chunking design](superpowers/specs/2026-09-30-b1-page-first-chunking-design.md); implementation plan pending written-spec review |
 
 ## Verification evidence
 
-### A5.1 — 2026-09-30
+### A5 PDF hierarchy configuration — 2026-09-30
 
 - `uv run --frozen pytest -q`: 24 tests passed.
 - The real `convert_document()` path converted
@@ -37,10 +39,49 @@ component IDs match the authoritative diagram in
 - The source SHA-256 remained
   `4a04d3830220aee2f07a2074d42a334141e6fe6d7bbc05d15221c2b1e9ecce13`.
 
-## A10 acceptance summary
+### A10 pure transformation — 2026-09-30
+
+- `uv run --frozen pytest tests/test_hierarchy.py -v`: 17 tests passed.
+- `build_hierarchy_sidecar()` traverses canonical body/group references without
+  loading Docling or touching disk. It preserves reading order, item IDs,
+  container ancestry, generic heading paths, and canonical page provenance.
+- Exact tests cover `no_headings`, `flat_levels`, `skipped_levels`, and
+  `non_monotonic_pages`. Unresolved references, group cycles, malformed heading
+  levels, and conflicting `self_ref` values fail validation.
+- A read-only check successfully processed all four existing canonical
+  artifacts, ranging from 38 to 2,863 reading-order items.
+- A10 is **Implemented** and is now invoked by A11 after canonical
+  serialization.
+
+### A11 Stage A integration — 2026-09-30
+
+- `UV_CACHE_DIR=.uv-cache uv run --frozen pytest -q`: 46 tests passed.
+- `tests/test_conversion.py` verifies deterministic sidecar persistence,
+  manifest-last completion, enriched artifact paths, and cache invalidation for
+  missing, malformed, mismatched-source, or unsupported-schema sidecars.
+- Four materially different PDFs completed with all four artifacts and valid
+  source-linked sidecars:
+  - `032_d35588dex101.pdf`: 80 reading-order items, 0 tables, 1
+    `skipped_levels` warning;
+  - `011_credit_agreement.pdf`: 264 reading-order items, 7 tables, 5
+    `skipped_levels` warnings;
+  - `002_Facility_Agreement.pdf`: 2,863 reading-order items, 9 tables, 14
+    `skipped_levels` warnings; and
+  - `051_ACCO_Brands_Third_Amended_Credit_Agreement.pdf`: 1,908
+    reading-order items, 23 tables, 20 `skipped_levels` warnings.
+- The facility agreement was regenerated from an empty cache under conversion
+  profile `docling-json-v3-rapidocr-en-hierarchy-sidecar-v1`; a repeated call
+  returned `cached=True` without changing any artifact modification time.
+- The long composite filing produced a Docling table-matching warning for 3 of
+  203 PDF cells. Conversion and hierarchy validation still completed, and the
+  warning remains a recorded parser limitation rather than a document-specific
+  repair rule.
+
+## A10 transformation acceptance summary
 
 - `document.docling.json` is byte-for-byte unchanged by A10.
-- `document.hierarchy.json` has an explicit schema version and source SHA-256.
+- The returned hierarchy mapping has an explicit schema version and source
+  SHA-256.
 - Text and table entries refer back to canonical Docling item IDs.
 - Heading paths use generic numeric depth; they do not require the agreement to
   use words such as *Article*, *Section*, or *Clause*.
@@ -48,6 +89,10 @@ component IDs match the authoritative diagram in
   `skipped_levels`, and `non_monotonic_pages`.
 - Missing or cyclic references fail validation instead of producing a plausible
   but untrustworthy hierarchy.
+
+## A11 integration acceptance summary
+
+- `document.hierarchy.json` persists the A10 mapping deterministically.
 - Cache completeness requires the sidecar and the matching conversion profile.
 - Stage A returns a `ConversionArtifact` that includes the sidecar path only
   after the manifest has been finalized successfully.
