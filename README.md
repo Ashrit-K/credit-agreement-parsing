@@ -5,8 +5,9 @@ evidence-backed JSON. The target output covers parties, interest terms,
 maturity and extension provisions, covenants, repayment terms, call protection,
 and other material agreement terms.
 
-The project is under active development. Document conversion is operational;
-topic mapping and substantive LLM extraction are still planned. The current
+The project is under active development. Document conversion and page-first
+evidence chunking are operational; topic mapping and substantive LLM extraction
+are still planned. The current
 `extract_parties()` function intentionally returns `not_implemented` rather
 than inventing borrower or lender data.
 
@@ -19,8 +20,10 @@ than inventing borrower or lender data.
 | Gzip-wrapped SEC HTML handling | Implemented and tested |
 | Canonical Docling JSON, readable Markdown, and manifest | Implemented and tested |
 | Docling PDF heading-hierarchy inference | Implemented and tested |
-| Versioned hierarchy sidecar | Pending (`A10`) |
-| Page-first chunks and topic map | Planned (`Stage B`) |
+| Hierarchy sidecar transformation | Implemented and tested (`A10`) |
+| Sidecar persistence and final Stage A artifact | Implemented and tested (`A11`) |
+| Page-first provenance-preserving chunks | Implemented and tested (`B1`) |
+| Topic classification, map, and evidence retrieval | Planned (`B2`–`B6`) |
 | Shared OpenCode LLM interface | Planned (`Stage C`) |
 | Sleeve-based legal-term extraction | Planned (`Stage D`) |
 
@@ -76,6 +79,7 @@ from credit_agreement_extractor import convert_document
 artifact = convert_document("raw_documents/pdf/example.pdf")
 
 print(artifact.docling_json_path)
+print(artifact.hierarchy_json_path)
 print(artifact.markdown_path)
 print(artifact.manifest_path)
 ```
@@ -91,14 +95,49 @@ By default, conversion artifacts are stored under a content-addressed folder:
 ```text
 tmp/converted/<source-sha256>/
 ├── document.docling.json  # canonical downstream source
+├── document.hierarchy.json # generic hierarchy keyed by canonical item IDs
 ├── document.md            # readable development and review copy
 └── manifest.json          # source identity and conversion configuration
 ```
 
 The SHA-256 value is a fingerprint calculated from the source bytes. Repeating
 a conversion can reuse a complete cache entry only when both the source
-fingerprint and conversion profile match. The planned `A10` increment will add
-`document.hierarchy.json` to this artifact set.
+fingerprint and conversion profile match. Cache validation also requires a
+schema-version-1 hierarchy sidecar carrying the same source fingerprint. A10
+builds that deterministic sidecar from canonical Docling JSON, and A11 writes
+the manifest last before returning the completed Stage A artifact.
+
+## Build page-first chunks
+
+`build_chunks()` consumes a completed Stage A artifact and writes a separate,
+schema-versioned Stage B artifact:
+
+```python
+from credit_agreement_extractor import build_chunks, convert_document
+
+conversion = convert_document("raw_documents/pdf/example.pdf")
+chunks = build_chunks(conversion)
+
+print(chunks.chunks_json_path)
+print(chunks.cached)
+```
+
+The default output is:
+
+```text
+tmp/stage_b/<source-sha256>/document.chunks.json
+```
+
+PDF content is page-first. Large pages split only between canonical Docling
+items, while tables and explicit Docling lists remain atomic. HTML without page
+provenance uses deterministic reading-order chunks targeting 12,000 characters
+and prefers heading boundaries. Chunks do not overlap, invent pages, or replace
+source wording with summaries. Every item retains its canonical ID so full
+bounding-box and character-span provenance can be resolved from Stage A.
+
+The persisted artifact also serves as a development cache. It is reused only
+when the source, schema, chunking profile, canonical JSON hash, and hierarchy
+sidecar hash all match.
 
 ## Party-extraction scaffold
 
@@ -146,6 +185,7 @@ docs/                            # architecture, plans, and corpus audits
 raw_documents/pdf/               # immutable source PDFs
 raw_documents/htm/               # immutable source HTML/HTM files
 tmp/converted/                    # ignored generated conversion artifacts
+tmp/stage_b/                      # ignored generated B1 chunk artifacts
 ```
 
 Files under `raw_documents/` are the preserved public source corpus. Do not

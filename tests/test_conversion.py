@@ -10,14 +10,17 @@ import gzip
 import json
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+import credit_agreement_extractor.conversion as conversion_module
 from credit_agreement_extractor.conversion import (
     InvalidDocumentInputError,
     _default_converter,
     convert_document,
 )
+from credit_agreement_extractor.hierarchy import InvalidHierarchyInputError
 
 
 class FakeDoclingDocument:
@@ -29,9 +32,29 @@ class FakeDoclingDocument:
     def export_to_dict(self) -> dict[str, object]:
         return {
             "name": "agreement",
+            "body": {
+                "self_ref": "#/body",
+                "children": [
+                    {"$ref": "#/texts/0"},
+                    {"$ref": "#/texts/1"},
+                ],
+            },
+            "groups": [],
             "texts": [
                 {
                     "self_ref": "#/texts/0",
+                    "parent": {"$ref": "#/body"},
+                    "children": [],
+                    "label": "section_header",
+                    "level": 1,
+                    "text": "Credit Agreement",
+                    "prov": [{"page_no": 1}],
+                },
+                {
+                    "self_ref": "#/texts/1",
+                    "parent": {"$ref": "#/body"},
+                    "children": [],
+                    "label": "text",
                     "text": "Example Borrower, LLC",
                     "prov": [
                         {
@@ -42,6 +65,10 @@ class FakeDoclingDocument:
                     ],
                 }
             ],
+            "tables": [],
+            "pictures": [],
+            "form_items": [],
+            "key_value_items": [],
         }
 
 
@@ -88,24 +115,51 @@ def test_pdf_conversion_persists_canonical_and_derived_artifacts(
     )
 
     canonical = json.loads(artifact.docling_json_path.read_text(encoding="utf-8"))
-    assert canonical["texts"][0]["self_ref"] == "#/texts/0"
-    assert canonical["texts"][0]["prov"][0] == {
+    assert canonical == FakeDoclingDocument().export_to_dict()
+    assert canonical["texts"][1]["self_ref"] == "#/texts/1"
+    assert canonical["texts"][1]["prov"][0] == {
         "page_no": 1,
         "bbox": {"l": 72.0, "t": 100.0, "r": 300.0, "b": 120.0},
         "charspan": [0, 21],
     }
 
+    hierarchy = json.loads(
+        artifact.hierarchy_json_path.read_text(encoding="utf-8")
+    )
+    assert hierarchy["schema_version"] == 1
+    assert hierarchy["source_sha256"] == artifact.source_sha256
+    assert hierarchy["reading_order"] == ["#/texts/0", "#/texts/1"]
+    assert hierarchy["items"]["#/texts/1"]["heading_path"] == [
+        {"item_id": "#/texts/0", "depth": 1, "text": "Credit Agreement"}
+    ]
+
     manifest = json.loads(artifact.manifest_path.read_text(encoding="utf-8"))
     assert (
         manifest["conversion_profile"]
-        == "docling-json-v2-rapidocr-en-heading-hierarchy"
+        == "docling-json-v3-rapidocr-en-hierarchy-sidecar-v1"
     )
     assert manifest["source"]["sha256"] == artifact.source_sha256
     assert manifest["source"]["format"] == "pdf"
     assert manifest["artifacts"] == {
         "markdown": "document.md",
         "docling_json": "document.docling.json",
+        "hierarchy_json": "document.hierarchy.json",
     }
+    assert manifest["hierarchy_sidecar"] == {
+        "schema_version": 1,
+        "warning_count": 0,
+        "warning_codes": [],
+    }
+    assert manifest["status"] == "completed"
+    assert all(
+        path.is_file()
+        for path in (
+            artifact.markdown_path,
+            artifact.docling_json_path,
+            artifact.hierarchy_json_path,
+            artifact.manifest_path,
+        )
+    )
     assert manifest["ocr"] == {
         "enabled": True,
         "engine": "rapidocr",
@@ -130,6 +184,7 @@ def test_matching_complete_artifact_directory_is_reused(tmp_path: Path) -> None:
         for path in (
             first.markdown_path,
             first.docling_json_path,
+            first.hierarchy_json_path,
             first.manifest_path,
         )
     }
@@ -163,6 +218,76 @@ def test_changed_conversion_profile_invalidates_cached_artifacts(
 
     assert second.cached is False
     assert replacement_converter.received_paths == [source_path]
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        pytest.param(lambda path: path.unlink(), id="missing"),
+        pytest.param(
+            lambda path: path.write_text("{", encoding="utf-8"),
+            id="malformed",
+        ),
+        pytest.param(
+            lambda path: _rewrite_hierarchy(path, source_sha256="wrong-sha"),
+            id="wrong-source-sha",
+        ),
+        pytest.param(
+            lambda path: _rewrite_hierarchy(path, schema_version=99),
+            id="unsupported-schema",
+        ),
+    ],
+)
+def test_invalid_hierarchy_sidecar_invalidates_cache(
+    tmp_path: Path,
+    tamper: Callable[[Path], object],
+) -> None:
+    source_path = tmp_path / "agreement.pdf"
+    source_path.write_bytes(b"%PDF-1.4\nexample\n%%EOF\n")
+    output_root = tmp_path / "converted"
+    first = convert_document(source_path, output_root, converter=RecordingConverter())
+    tamper(first.hierarchy_json_path)
+    replacement_converter = RecordingConverter()
+
+    second = convert_document(
+        source_path,
+        output_root,
+        converter=replacement_converter,
+    )
+
+    assert second.cached is False
+    assert replacement_converter.received_paths == [source_path]
+
+
+def test_hierarchy_failure_removes_stale_completed_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_path = tmp_path / "agreement.pdf"
+    source_path.write_bytes(b"%PDF-1.4\nexample\n%%EOF\n")
+    output_root = tmp_path / "converted"
+    first = convert_document(source_path, output_root, converter=RecordingConverter())
+    first.hierarchy_json_path.unlink()
+
+    def fail_hierarchy(
+        canonical: dict[str, Any], *, source_sha256: str
+    ) -> dict[str, Any]:
+        raise InvalidHierarchyInputError("broken canonical hierarchy")
+
+    monkeypatch.setattr(
+        conversion_module,
+        "build_hierarchy_sidecar",
+        fail_hierarchy,
+    )
+
+    with pytest.raises(InvalidHierarchyInputError, match="broken canonical"):
+        convert_document(
+            source_path,
+            output_root,
+            converter=RecordingConverter(),
+        )
+
+    assert not first.manifest_path.exists()
 
 
 def test_gzip_wrapped_html_is_normalized_without_changing_source(
@@ -256,3 +381,10 @@ def _write_text(path: Path) -> Path:
     """Create a non-empty unsupported file for extension validation."""
     path.write_text("not a supported source", encoding="utf-8")
     return path
+
+
+def _rewrite_hierarchy(path: Path, **updates: object) -> None:
+    """Rewrite selected top-level sidecar fields for cache-validation tests."""
+    sidecar = json.loads(path.read_text(encoding="utf-8"))
+    sidecar.update(updates)
+    path.write_text(json.dumps(sidecar), encoding="utf-8")

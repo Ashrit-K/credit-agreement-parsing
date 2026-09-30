@@ -114,12 +114,12 @@ Contract details:
 | `src/credit_agreement_extractor/__init__.py` | Export only public hierarchy types/functions that callers actually need |
 | `tests/test_conversion.py` | Verify Docling configuration, profile invalidation, persistence order, manifest, and cache contract |
 | `tests/test_hierarchy.py` | Verify A10 traversal, generic heading paths, provenance, warnings, and hard failures |
-| `docs/conversion_pipeline.md` | Move A5.1, A10, and A11 to implemented only after verification |
+| `docs/conversion_pipeline.md` | Keep A5, A10, and A11 statuses aligned with verification |
 | `docs/build_backlog.md` | Update backlog statuses and link verification evidence |
 
 ---
 
-### Task 1: Enable Docling heading hierarchy during PDF extraction (A5.1)
+### Task 1: Enable Docling heading hierarchy within the A5 PDF pipeline
 
 **Files:**
 - Modify: `tests/test_conversion.py`
@@ -201,7 +201,7 @@ Run the Step 2 command again. Expected: PASS.
 - Raises: `InvalidHierarchyInputError` when canonical structure cannot be
   traversed safely.
 
-- [ ] **Step 1: Write a minimal representative canonical fixture**
+- [x] **Step 1: Write a minimal representative canonical fixture**
 
 In `tests/test_hierarchy.py`, build a small in-memory canonical document with:
 
@@ -213,7 +213,7 @@ In `tests/test_hierarchy.py`, build a small in-memory canonical document with:
 
 Do not use a live Docling conversion in unit tests.
 
-- [ ] **Step 2: Write failing happy-path tests**
+- [x] **Step 2: Write failing happy-path tests**
 
 Assert that the builder:
 
@@ -226,7 +226,7 @@ Assert that the builder:
 - emits no substantive paragraph/table text in the sidecar; and
 - produces identical dictionaries for repeated calls with identical input.
 
-- [ ] **Step 3: Run the happy-path tests and verify RED**
+- [x] **Step 3: Run the happy-path tests and verify RED**
 
 Run:
 
@@ -236,7 +236,7 @@ uv run pytest tests/test_hierarchy.py -k "reading_order or heading_path" -v
 
 Expected: test collection fails because `hierarchy.py` does not exist.
 
-- [ ] **Step 4: Implement reference indexing and guarded traversal**
+- [x] **Step 4: Implement reference indexing and guarded traversal**
 
 Implement these internal responsibilities as small pure functions:
 
@@ -256,7 +256,7 @@ Index `body`, `groups`, `texts`, `tables`, `pictures`, `form_items`, and
 Track the active recursion path to detect cycles. A group is structural context;
 only non-container items enter `reading_order`.
 
-- [ ] **Step 5: Implement the generic heading stack**
+- [x] **Step 5: Implement the generic heading stack**
 
 When a traversed item has `label == "section_header"`:
 
@@ -268,7 +268,7 @@ When a traversed item has `label == "section_header"`:
 For every later item, copy the current stack into its sidecar entry. Do not
 renumber levels or infer missing ancestors.
 
-- [ ] **Step 6: Write failing warning-taxonomy tests**
+- [x] **Step 6: Write failing warning-taxonomy tests**
 
 Use separate tiny fixtures and assert exact warning codes, involved item IDs,
 pages, and details for:
@@ -282,12 +282,12 @@ pages, and details for:
 Also assert that warning order follows reading order and no extra warning code
 can appear.
 
-- [ ] **Step 7: Implement only the four warning rules**
+- [x] **Step 7: Implement only the four warning rules**
 
 Keep warning construction separate from traversal. Warnings are observations,
 not reasons to discard hierarchy paths or canonical content.
 
-- [ ] **Step 8: Write failing hard-validation tests**
+- [x] **Step 8: Write failing hard-validation tests**
 
 Assert `InvalidHierarchyInputError` for:
 
@@ -298,7 +298,7 @@ Assert `InvalidHierarchyInputError` for:
 - an item whose `self_ref` conflicts with the collection/index position used by
   its `$ref`.
 
-- [ ] **Step 9: Implement hard validation and verify Task 2 GREEN**
+- [x] **Step 9: Implement hard validation and verify Task 2 GREEN**
 
 Run:
 
@@ -307,6 +307,11 @@ uv run pytest tests/test_hierarchy.py -v
 ```
 
 Expected: all A10 unit tests pass without loading Docling or touching disk.
+
+Verification on 2026-09-30: all 17 hierarchy tests passed. A read-only check
+also traversed the four existing canonical artifacts successfully. A10 is
+implemented; wiring, persistence, cache integration, and the final A11 artifact
+contract remain Task 3 work.
 
 ---
 
@@ -324,14 +329,14 @@ Expected: all A10 unit tests pass without loading Docling or touching disk.
 - Changes: cache completeness to require all four artifact files and matching
   conversion profile.
 
-- [ ] **Step 1: Upgrade the fake canonical test document**
+- [x] **Step 1: Upgrade the fake canonical test document**
 
 Change `FakeDoclingDocument.export_to_dict()` in `tests/test_conversion.py` to
 return a small valid Docling-like body tree with canonical `$ref`, `self_ref`,
 heading level, paragraph, and provenance data. Keep the fake independent of the
 real Docling runtime.
 
-- [ ] **Step 2: Write failing Stage A persistence tests**
+- [x] **Step 2: Write failing Stage A persistence tests**
 
 Assert that conversion:
 
@@ -345,7 +350,7 @@ Assert that conversion:
 - invalidates a cache entry when its sidecar is missing, malformed, has a
   different source SHA-256, or has an unsupported schema version.
 
-- [ ] **Step 3: Run the focused integration tests and verify RED**
+- [x] **Step 3: Run the focused integration tests and verify RED**
 
 Run:
 
@@ -357,7 +362,7 @@ uv run pytest tests/test_conversion.py \
 Expected: FAIL because the artifact, manifest, and cache do not yet know about
 the sidecar.
 
-- [ ] **Step 4: Integrate the A10 builder after canonical serialization**
+- [x] **Step 4: Integrate the A10 builder after canonical serialization**
 
 Add `hierarchy_json_path` in `_artifact_paths()`. After exporting and writing
 canonical JSON, call `build_hierarchy_sidecar()` with that canonical mapping and
@@ -368,7 +373,7 @@ convention as the canonical output.
 Keep construction in `hierarchy.py`; `conversion.py` should only orchestrate
 and persist it.
 
-- [ ] **Step 5: Make A11 the completion boundary**
+- [x] **Step 5: Make A11 the completion boundary**
 
 Build `manifest.json` only after Markdown, canonical JSON, and hierarchy JSON
 have been written successfully. Include:
@@ -385,14 +390,14 @@ Return the enriched `ConversionArtifact` only after the completed manifest is
 on disk. If A10 fails, propagate the validation error and do not leave a
 completed manifest that can be mistaken for a valid cache entry.
 
-- [ ] **Step 6: Tighten cache validation**
+- [x] **Step 6: Tighten cache validation**
 
 Require all four artifact paths, the current conversion profile, matching
 source SHA-256, sidecar schema version 1, and matching sidecar source SHA-256.
 An old three-file cache is a miss and is regenerated; do not attempt an implicit
 in-place migration.
 
-- [ ] **Step 7: Run Task 3 tests and verify GREEN**
+- [x] **Step 7: Run Task 3 tests and verify GREEN**
 
 Run:
 
@@ -401,6 +406,11 @@ uv run pytest tests/test_conversion.py tests/test_hierarchy.py -v
 ```
 
 Expected: all focused tests pass.
+
+Verification on 2026-09-30: all 32 focused conversion and hierarchy tests
+passed. A11 now persists the sidecar, validates it as part of cache
+completeness, writes the manifest last, and returns its path in the completed
+artifact.
 
 ---
 
@@ -412,11 +422,11 @@ Expected: all focused tests pass.
 - Generated and ignored: `tmp/converted/<source-sha256>/...`
 
 **Interfaces:**
-- Consumes: completed A5.1/A10/A11 conversion flow.
+- Consumes: completed A5/A10/A11 conversion flow.
 - Produces: regression evidence across materially different agreements and
   accurate architecture/backlog status.
 
-- [ ] **Step 1: Run all automated tests**
+- [x] **Step 1: Run all automated tests**
 
 Run:
 
@@ -427,7 +437,7 @@ git diff --check
 
 Expected: all tests pass and no whitespace errors are reported.
 
-- [ ] **Step 2: Convert representative PDF shapes**
+- [x] **Step 2: Convert representative PDF shapes**
 
 Run `convert_document()` into a fresh temporary output root for these existing
 corpus files:
@@ -444,33 +454,40 @@ the sidecar source SHA-256 matches the manifest, every sidecar ID resolves in
 canonical JSON, and table items retain heading/container context where Docling
 provided it.
 
-- [ ] **Step 3: Inspect warning behavior rather than imposing a quality gate**
+- [x] **Step 3: Inspect warning behavior rather than imposing a quality gate**
 
 Record counts for the four warning codes. Sparse or noisy hierarchy is not a
 conversion failure if references are valid: the downstream page-first fallback
 must remain available. Do not add document-specific repairs based on these four
 examples.
 
-- [ ] **Step 4: Verify cache reuse under the new profile**
+- [x] **Step 4: Verify cache reuse under the new profile**
 
 Convert one representative PDF again. Expected: `cached is True`, the converter
 is not invoked, and none of the four artifact modification times change.
 
-- [ ] **Step 5: Update architecture and backlog status**
+- [x] **Step 5: Update architecture and backlog status**
 
 Only after Steps 1-4 pass:
 
-- change A5.1, A10, and A11 to solid implemented boxes/arrows in
-  `docs/conversion_pipeline.md`;
+- keep A5 and A10 solid and change A11 plus the A9-to-A10 and A10-to-A11
+  connections to solid in `docs/conversion_pipeline.md`;
 - remove the obsolete A3.1 current-artifact shortcut if implementation now
   returns only through A11; and
-- mark A5.1 and A10 `Implemented` in `docs/build_backlog.md`, adding the exact
-  test commands and representative-document results as verification evidence.
+- keep A5 and A10 `Implemented` and mark A11 `Implemented` in
+  `docs/build_backlog.md`, adding the exact test commands and
+  representative-document results as verification evidence.
 
 ## Definition of done
 
-A10 is done only when the canonical export is unchanged, the deterministic
-sidecar is independently tested, invalid references fail loudly, all four
-warnings have exact tests, cache completeness includes the sidecar, and the
+A10 is done when the canonical export is unchanged, the deterministic sidecar
+mapping is independently tested, invalid references fail loudly, and all four
+warnings have exact tests. The overall Stage A hierarchy increment is done only
+when A11 persists that mapping, cache completeness includes it, and the
 representative-document checks demonstrate that imperfect hierarchy never
 removes access to canonical page-first content.
+
+Completed on 2026-09-30. The full suite passed with 46 tests; the four
+representative documents completed with resolvable sidecar IDs and retained
+page-first canonical content. The regenerated facility agreement also produced
+a verified four-file cache hit on its second call.

@@ -15,6 +15,8 @@ dist/
 build/
 .pytest_cache/
 tmp/converted/
+tmp/stage_b/
+archive/*.bundle
 :memory:.ses
 tmp/hierarchy_experiment.py
 tmp/hierarchy_experiment_output/

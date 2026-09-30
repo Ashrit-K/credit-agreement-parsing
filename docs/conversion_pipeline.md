@@ -7,13 +7,16 @@ build next.
 ## Python entry point
 
 ```python
-from credit_agreement_extractor import convert_document
+from credit_agreement_extractor import build_chunks, convert_document
 
 artifact = convert_document("raw_documents/pdf/example.pdf")
+chunks = build_chunks(artifact)
 
 print(artifact.docling_json_path)
+print(artifact.hierarchy_json_path)
 print(artifact.markdown_path)
 print(artifact.manifest_path)
+print(chunks.chunks_json_path)
 ```
 
 The default output root is `tmp/converted/`. Each source is placed in a folder
@@ -22,10 +25,10 @@ fingerprint: the function calculates it from the source bytes. Repeating a call
 with identical source bytes reuses a complete cached conversion only when its
 conversion-profile identifier also matches the current settings.
 
-The cache short circuit is currently a development optimization. Once A10 is
-implemented, a cache entry will be complete only if it also contains the
-versioned hierarchy sidecar produced from the same canonical Docling JSON and
-conversion profile. Production cache policy remains a separate decision.
+The cache short circuit is currently a development optimization. A cache entry
+is complete only if it contains all four artifacts, uses the current conversion
+profile, and has a schema-version-1 hierarchy sidecar with the same source
+fingerprint. Production cache policy remains a separate decision.
 
 ## Conversion artifact contract
 
@@ -36,15 +39,16 @@ The completed Stage A artifact will contain four files:
   provenance such as page numbers, character spans, and bounding boxes.
 - `document.md` is a readable derivative for manual review and debugging. It is
   not the downstream source of truth.
-- `document.hierarchy.json` is the planned A10 sidecar. It adds generic heading
+- `document.hierarchy.json` is the A10 sidecar. It adds generic heading
   paths and hierarchy-quality warnings keyed by canonical Docling item IDs. It
   does not copy or rewrite the complete document.
 - `manifest.json` records source identity, converter version, OCR and heading-
   hierarchy configuration, conversion profile, gzip normalization, artifact
   names, and final conversion status.
 
-The Docling JSON and Markdown outputs are implemented. The hierarchy sidecar
-and the enriched final manifest/artifact contract are pending A10 and A11.
+All four outputs are implemented and tested. A10 builds and persists the
+hierarchy mapping after canonical serialization. A11 writes the completed
+manifest last and returns the enriched artifact only after every output exists.
 
 OCR is enabled only for PDF conversion. The manifest records configuration, not
 a claim that OCR was necessary on a particular born-digital page; Docling's OCR
@@ -56,12 +60,13 @@ Docling, and removes that copy afterward. It never rewrites the source file.
 
 ## Frozen hierarchy design
 
-Docling's built-in heading-hierarchy inference is enabled for PDF conversion so
-the canonical export contains all structure Docling can recover. A5.1 also
-enables parsed-page generation, records both settings in the manifest, and uses
-a distinct conversion profile so older caches are not reused.
+Within A5, Docling's built-in heading-hierarchy inference is enabled for PDF
+conversion so the canonical export contains all structure Docling can recover.
+A5 also enables parsed-page generation, records both settings in the manifest,
+and uses a distinct conversion profile so older caches are not reused.
 
-A10 will consume the canonical JSON and produce `document.hierarchy.json` with:
+A10's pure builder consumes the canonical JSON and produces the in-memory
+sidecar mapping with:
 
 - generic heading depths and ancestor paths rather than legal-specific labels
   such as `Article`, `Section`, or `Clause`;
@@ -72,14 +77,45 @@ A10 will consume the canonical JSON and produce `document.hierarchy.json` with:
 - explicit validation failures for broken references or cycles rather than
   treating corrupt structure as a warning.
 
-Hierarchy is useful context, not an authority that can discard content. A10
-will not alter reading order, rewrite source text, infer legal meaning, or
-remove items. When hierarchy is sparse or imperfect, Stage B still has the
-canonical page-first reading order.
+Hierarchy is useful context, not an authority that can discard content. The
+builder does not alter reading order, rewrite source text, infer legal meaning,
+or remove items. When hierarchy is sparse or imperfect, Stage B still has the
+canonical page-first reading order. Persisting this mapping as
+`document.hierarchy.json` and adding it to Stage A's cache/artifact contract are
+implemented through A11.
+
+## B1 chunk artifact contract
+
+B1 is implemented as a separate Stage B operation:
+
+```python
+chunks = build_chunks(artifact)
+```
+
+It reads the canonical Docling JSON and A10 hierarchy sidecar and writes:
+
+```text
+tmp/stage_b/<source-sha256>/document.chunks.json
+```
+
+The chunk artifact is schema-versioned and records its source fingerprint,
+chunking profile, and SHA-256 hashes for both Stage A JSON inputs. It contains
+deterministic chunk IDs, neighbor links, exact canonical item IDs, verified
+pages, source wording, table renderings, hierarchy paths, and container/list
+relationships. It does not duplicate bounding boxes or character spans; those
+remain resolvable from canonical JSON through each retained item ID.
+
+PDFs use page-first boundaries. Large pages split only between atomic units,
+while individual leaves, tables, and explicit Docling lists remain intact.
+Fully page-less documents use heading-aware reading-order chunks targeting
+12,000 characters. B1 creates no overlap and never fabricates page provenance.
+
+The persisted file also acts as a development cache. A source, profile, schema,
+or Stage A input-hash mismatch rebuilds only B1 and does not rerun Docling.
 
 ## Topic-map and evidence rule
 
-Stage B begins from canonical Docling items and builds page-first chunks. Page
+Implemented B1 begins from canonical Docling items and builds page-first chunks. Page
 boundaries guide chunk starts and ends, while tables remain atomic where
 practical and lists are not split midway. Each chunk keeps its item IDs, page
 numbers, neighboring chunk links, and any A10 heading path.
@@ -127,6 +163,10 @@ Status and cognitive work use separate visual signals:
 - Purple boxes identify LLM or other cognitive inference steps, regardless of
   implementation status.
 
+A10, A11, and B1 are implemented and tested. Their boxes and the A11-to-B1
+connection are solid. B1-to-B2 and every later Stage B connection remain
+dashed because topic classification, mapping, and retrieval are pending.
+
 ```mermaid
 flowchart TD
     subgraph A_GROUP["A — Document intake and conversion"]
@@ -135,17 +175,15 @@ flowchart TD
         A3 -->|Yes — current shortcut| A3_1[A3.1 — Return current ConversionArtifact]
         A3 -->|No — cache miss| A4{A4 — Document format router}
         A2 -.->|Target production route — bypass cache| A4
-        A4 -->|PDF| A5[A5 — Docling PDF pipeline and local English OCR]
-        A5_1[A5.1 — Enable Docling heading-hierarchy inference] -->|Configure PDF pipeline| A5
+        A4 -->|PDF| A5[A5 — Docling PDF pipeline: local English OCR and heading-hierarchy inference]
         A4 -->|Plain HTML| A6[A6 — Docling HTML pipeline]
         A4 -->|Gzip-wrapped HTML| A7[A7 — Temporary local decompression]
         A7 --> A6
         A5 --> A8[A8 — Canonical DoclingDocument]
         A6 --> A8
         A8 --> A9[A9 — Write canonical Docling JSON and readable Markdown]
-        A9 -.-> A10[A10 — Build versioned hierarchy sidecar]
-        A10 -.-> A11[A11 — Finalize manifest and return enriched ConversionArtifact]
-        A3 -.->|Target cache includes A10 sidecar| A11
+        A9 --> A10[A10 — Build and persist versioned hierarchy sidecar]
+        A10 --> A11[A11 — Finalize manifest and return enriched ConversionArtifact]
     end
 
     subgraph B_GROUP["B — Topic-map construction and evidence retrieval"]
@@ -210,7 +248,7 @@ flowchart TD
         D8 -.-> D9
     end
 
-    A11 -.-> B1
+    A11 --> B1
     B6 -.-> D1
     D7 -.-> B5
 
@@ -220,12 +258,18 @@ flowchart TD
     classDef cognitiveImplemented fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,color:#1f2937;
     classDef cognitivePending fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,stroke-dasharray:6 4,color:#1f2937;
 
-    class A1,A2,A3,A3_1,A4,A5,A5_1,A6,A7,A8,A9 implemented;
-    class A10,A11,B1,B2,B4,B5,B6,C1,C2,C3,C4,C5,D1,D2,D4,D5,D6,D7,D8,D9 pending;
+    class A1,A2,A3,A3_1,A4,A5,A6,A7,A8,A9,A10,A11 implemented;
+    class B1 implemented;
+    class B2,B4,B5,B6,C1,C2,C3,C4,C5,D1,D2,D4,D5,D6,D7,D8,D9 pending;
     class B3,D3_1,D3_2,D3_3,D3_4,D3_5,D3_6 cognitivePending;
 ```
 
-The current implementation still writes `manifest.json` as part of its A9
-persistence step and may return through A3.1. The target A10/A11 increment will
-make the sidecar part of cache completeness, finalize the manifest only after
-all artifacts exist, and return the enriched artifact through A11.
+The development cache shortcut returns through A3.1 only when all four files
+and their recorded identities validate. On a cache miss, A9 writes canonical
+JSON and Markdown, A10 builds and persists the sidecar, and A11 writes the
+completed manifest last before returning the enriched artifact.
+
+B1 runs separately through `build_chunks()`. It reuses a validated Stage B
+artifact when possible; otherwise it deterministically rebuilds
+`document.chunks.json` from the two Stage A JSON artifacts. B1 is now the solid
+handoff from completed conversion into the still-pending topic-map components.

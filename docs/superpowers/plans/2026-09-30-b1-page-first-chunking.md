@@ -18,6 +18,14 @@
 - Use a 12,000-character model-independent target and permit explicitly marked atomic overages.
 - Keep B2 through B6 and all Stage D behavior out of this implementation.
 
+## Implementation status
+
+Completed on 2026-09-30. The final implementation passed 23 focused B1 tests,
+69 full-suite tests, and real-document verification on
+`002_Facility_Agreement.pdf` and `012_tmb-20250627xex10d1.htm`. The checkboxes
+below preserve the originally approved execution sequence; authoritative
+completion evidence lives in `docs/build_backlog.md`.
+
 ---
 
 ## File Structure
