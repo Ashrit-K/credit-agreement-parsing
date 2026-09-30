@@ -74,7 +74,7 @@ _SUPPORTED_SUFFIXES = {
 # Bump this identifier whenever settings or serialization behavior changes in a
 # way that should invalidate earlier artifacts. The source hash alone only says
 # the input is identical; it does not say the conversion recipe is identical.
-_CONVERSION_PROFILE = "docling-json-v1-rapidocr-en"
+_CONVERSION_PROFILE = "docling-json-v2-rapidocr-en-heading-hierarchy"
 
 
 def _validate_source_path(source_path: str | Path) -> tuple[Path, str]:
@@ -162,12 +162,18 @@ def _is_complete_cache(artifact: ConversionArtifact) -> bool:
 def _default_converter() -> DocumentConverterLike:
     """Load Docling lazily and keep PDF OCR local, explicit, and English-only."""
     from docling.datamodel.base_models import InputFormat
-    from docling.datamodel.pipeline_options import PdfPipelineOptions, RapidOcrOptions
+    from docling.datamodel.pipeline_options import (
+        HeadingHierarchyOptions,
+        PdfPipelineOptions,
+        RapidOcrOptions,
+    )
     from docling.document_converter import DocumentConverter, PdfFormatOption
 
     pdf_options = PdfPipelineOptions(
         do_ocr=True,
         ocr_options=RapidOcrOptions(lang=["iso:en"]),
+        heading_hierarchy_options=HeadingHierarchyOptions(enabled=True),
+        generate_parsed_pages=True,
     )
     return DocumentConverter(
         # Restrict detection to the formats promised by our public function.
@@ -280,6 +286,14 @@ def convert_document(
             "enabled": source_format == "pdf",
             "engine": "rapidocr",
             "languages": ["iso:en"],
+        },
+        "heading_hierarchy": {
+            # Built-in inference is currently configured only on the PDF
+            # pipeline. A10 can still consume structure already present in a
+            # canonical HTML export without claiming this PDF stage ran.
+            "enabled": source_format == "pdf",
+            "provider": "docling",
+            "generate_parsed_pages": source_format == "pdf",
         },
         "gzip_normalized": gzip_normalized,
         "artifacts": {

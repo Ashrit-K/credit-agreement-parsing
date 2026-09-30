@@ -130,7 +130,7 @@ Contract details:
 - Produces: PDF `PdfPipelineOptions` with Docling heading inference enabled and
   parsed pages available to that stage.
 
-- [ ] **Step 1: Write the failing converter-configuration assertions**
+- [x] **Step 1: Write the failing converter-configuration assertions**
 
 Extend `test_default_docling_converter_uses_local_english_rapidocr()` to assert:
 
@@ -142,7 +142,7 @@ assert pdf_options.heading_hierarchy_options.enabled is True
 Also assert that the completed PDF manifest records an explicit hierarchy
 configuration block, while HTML records that PDF inference was not run.
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run:
 
@@ -154,7 +154,7 @@ uv run pytest tests/test_conversion.py \
 Expected: FAIL because heading hierarchy and parsed-page generation are not yet
 enabled or recorded.
 
-- [ ] **Step 3: Configure Docling and invalidate prior conversion caches**
+- [x] **Step 3: Configure Docling and invalidate prior conversion caches**
 
 Import `HeadingHierarchyOptions` from
 `docling.datamodel.pipeline_options`. Construct PDF options with:
@@ -183,7 +183,7 @@ that explicitly captures heading inference, for example
 For HTML, set `enabled` and `generate_parsed_pages` to `false`; A10 still uses
 any hierarchy already present in Docling's HTML canonical export.
 
-- [ ] **Step 4: Run the focused tests and verify GREEN**
+- [x] **Step 4: Run the focused tests and verify GREEN**
 
 Run the Step 2 command again. Expected: PASS.
 

@@ -96,6 +96,10 @@ def test_pdf_conversion_persists_canonical_and_derived_artifacts(
     }
 
     manifest = json.loads(artifact.manifest_path.read_text(encoding="utf-8"))
+    assert (
+        manifest["conversion_profile"]
+        == "docling-json-v2-rapidocr-en-heading-hierarchy"
+    )
     assert manifest["source"]["sha256"] == artifact.source_sha256
     assert manifest["source"]["format"] == "pdf"
     assert manifest["artifacts"] == {
@@ -106,6 +110,11 @@ def test_pdf_conversion_persists_canonical_and_derived_artifacts(
         "enabled": True,
         "engine": "rapidocr",
         "languages": ["iso:en"],
+    }
+    assert manifest["heading_hierarchy"] == {
+        "enabled": True,
+        "provider": "docling",
+        "generate_parsed_pages": True,
     }
     assert artifact.cached is False
 
@@ -180,6 +189,11 @@ def test_gzip_wrapped_html_is_normalized_without_changing_source(
     manifest = json.loads(artifact.manifest_path.read_text(encoding="utf-8"))
     assert manifest["gzip_normalized"] is True
     assert manifest["ocr"]["enabled"] is False
+    assert manifest["heading_hierarchy"] == {
+        "enabled": False,
+        "provider": "docling",
+        "generate_parsed_pages": False,
+    }
 
 
 def test_default_docling_converter_uses_local_english_rapidocr() -> None:
@@ -194,6 +208,8 @@ def test_default_docling_converter_uses_local_english_rapidocr() -> None:
     assert isinstance(pdf_options.ocr_options, RapidOcrOptions)
     # Docling canonicalizes ``iso:en`` to its explicit Latin-script tag.
     assert pdf_options.ocr_options.lang == ["iso:en-Latn"]
+    assert pdf_options.generate_parsed_pages is True
+    assert pdf_options.heading_hierarchy_options.enabled is True
 
 
 def test_broken_gzip_html_reports_a_document_input_error(tmp_path: Path) -> None:
