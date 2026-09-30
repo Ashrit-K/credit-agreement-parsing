@@ -26,13 +26,14 @@ Implemented Stage A behavior currently includes:
 - Python 3.11 and uv-based development.
 - `convert_document(path)` support for PDF, HTML, and HTM input.
 - Local Docling conversion, with English RapidOCR available for PDFs.
+- Docling PDF heading-hierarchy inference and parsed-page generation (A5.1),
+  recorded in the manifest and conversion profile.
 - Gzip magic-byte detection and temporary decompression for compressed SEC `.htm` files.
 - Canonical `document.docling.json`, derived `document.md`, and `manifest.json` artifacts under `tmp/converted/<source-sha256>/`.
 - A development-only cache shortcut keyed by source SHA-256 and conversion profile.
 
-The next frozen Stage A increment is pending, not implemented:
+The next frozen Stage A increments are pending, not implemented:
 
-- `A5.1`: enable Docling's built-in PDF heading-hierarchy inference and parsed-page generation.
 - `A10`: read the unchanged canonical Docling JSON and write a versioned `document.hierarchy.json` sidecar keyed by canonical item IDs.
 - `A11`: finalize the manifest only after every artifact exists and return an enriched `ConversionArtifact`.
 

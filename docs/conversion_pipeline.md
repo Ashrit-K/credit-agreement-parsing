@@ -56,9 +56,10 @@ Docling, and removes that copy afterward. It never rewrites the source file.
 
 ## Frozen hierarchy design
 
-Docling's built-in heading-hierarchy inference will be enabled for PDF
-conversion so that the canonical export contains all structure Docling can
-recover. This is A5.1 and is not implemented yet.
+Docling's built-in heading-hierarchy inference is enabled for PDF conversion so
+the canonical export contains all structure Docling can recover. A5.1 also
+enables parsed-page generation, records both settings in the manifest, and uses
+a distinct conversion profile so older caches are not reused.
 
 A10 will consume the canonical JSON and produce `document.hierarchy.json` with:
 
@@ -135,7 +136,7 @@ flowchart TD
         A3 -->|No — cache miss| A4{A4 — Document format router}
         A2 -.->|Target production route — bypass cache| A4
         A4 -->|PDF| A5[A5 — Docling PDF pipeline and local English OCR]
-        A5_1[A5.1 — Enable Docling heading-hierarchy inference] -.->|Configure PDF pipeline| A5
+        A5_1[A5.1 — Enable Docling heading-hierarchy inference] -->|Configure PDF pipeline| A5
         A4 -->|Plain HTML| A6[A6 — Docling HTML pipeline]
         A4 -->|Gzip-wrapped HTML| A7[A7 — Temporary local decompression]
         A7 --> A6
@@ -219,8 +220,8 @@ flowchart TD
     classDef cognitiveImplemented fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,color:#1f2937;
     classDef cognitivePending fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,stroke-dasharray:6 4,color:#1f2937;
 
-    class A1,A2,A3,A3_1,A4,A5,A6,A7,A8,A9 implemented;
-    class A5_1,A10,A11,B1,B2,B4,B5,B6,C1,C2,C3,C4,C5,D1,D2,D4,D5,D6,D7,D8,D9 pending;
+    class A1,A2,A3,A3_1,A4,A5,A5_1,A6,A7,A8,A9 implemented;
+    class A10,A11,B1,B2,B4,B5,B6,C1,C2,C3,C4,C5,D1,D2,D4,D5,D6,D7,D8,D9 pending;
     class B3,D3_1,D3_2,D3_3,D3_4,D3_5,D3_6 cognitivePending;
 ```
 
