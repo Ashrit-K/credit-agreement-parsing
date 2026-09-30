@@ -26,16 +26,34 @@ Implemented Stage A behavior currently includes:
 - Python 3.11 and uv-based development.
 - `convert_document(path)` support for PDF, HTML, and HTM input.
 - Local Docling conversion, with English RapidOCR available for PDFs.
-- Docling PDF heading-hierarchy inference and parsed-page generation (A5.1),
-  recorded in the manifest and conversion profile.
+- A5's Docling PDF pipeline includes heading-hierarchy inference and parsed-page
+  generation, recorded in the manifest and conversion profile.
 - Gzip magic-byte detection and temporary decompression for compressed SEC `.htm` files.
-- Canonical `document.docling.json`, derived `document.md`, and `manifest.json` artifacts under `tmp/converted/<source-sha256>/`.
-- A development-only cache shortcut keyed by source SHA-256 and conversion profile.
+- Canonical `document.docling.json`, derived `document.md`, versioned
+  `document.hierarchy.json`, and final `manifest.json` artifacts under
+  `tmp/converted/<source-sha256>/`.
+- A development-only cache shortcut keyed by source SHA-256 and conversion
+  profile that requires and validates all four artifacts.
+- A10's pure, independently tested canonical-JSON hierarchy transformation in
+  `hierarchy.py`.
+- A11's integration of A10 after canonical serialization, deterministic
+  sidecar persistence, manifest-last completion boundary, and enriched
+  `ConversionArtifact` return contract.
 
-The next frozen Stage A increments are pending, not implemented:
+Implemented Stage B behavior currently includes:
 
-- `A10`: read the unchanged canonical Docling JSON and write a versioned `document.hierarchy.json` sidecar keyed by canonical item IDs.
-- `A11`: finalize the manifest only after every artifact exists and return an enriched `ConversionArtifact`.
+- B1's pure `build_chunk_document()` transformation and public
+  `build_chunks(conversion_artifact)` persistence wrapper in `chunking.py`.
+- Separate schema-versioned output under
+  `tmp/stage_b/<source-sha256>/document.chunks.json` so Stage A's four-artifact
+  contract remains unchanged.
+- Page-first PDF chunks, a 12,000-character heading-aware fallback for
+  page-less HTML, and no overlapping source items.
+- Atomic canonical leaves, tables, and explicit Docling lists, with original
+  and normalized source wording, page provenance, A10 heading paths, container
+  ancestry, deterministic chunk IDs, and neighbor links.
+- A development cache keyed by source identity, chunking profile, and the
+  SHA-256 hashes of both Stage A JSON inputs.
 
 For A10:
 
@@ -45,7 +63,11 @@ For A10:
 - Limit initial hierarchy warnings to `no_headings`, `flat_levels`, `skipped_levels`, and `non_monotonic_pages`.
 - Treat broken references, malformed heading levels, and cycles as errors rather than warnings.
 
-Planned Stage B begins with page-first chunks retaining Docling item IDs, page numbers, neighbor links, tables/lists, and optional A10 hierarchy context. Deterministic topic signals and a batched inexpensive LLM classifier will feed a provenance-preserving topic map. The map must point to original source items rather than replace them with summaries.
+B1 is implemented. Planned Stage B work now begins at B2: deterministic topic
+signals and a batched inexpensive LLM classifier will feed a
+provenance-preserving topic map. The map must point to original source items
+rather than replace them with summaries. B5 and B6 will retrieve and package
+original topic-specific evidence for extraction sleeves.
 
 Stage C is a cross-cutting LLM interface, not a sequential document-processing stage. It routes OpenCode requests through explicit, tested model-to-API mappings. The agreed default is `gpt-5.6-luna` with medium reasoning, with call-time overrides for model, reasoning effort, and API style. Support Responses and Chat Completions adapters; Claude/Messages support is not currently required. Every purple LLM box uses this shared transport contract with its own system prompt, evidence, and response schema; do not route document artifacts through C in the pipeline diagram.
 
@@ -78,7 +100,8 @@ Planned Stage D is sleeve-based LLM extraction. Each independently testable slee
 
 - `docs/conversion_pipeline.md` is the authoritative architecture and status diagram.
 - `docs/build_backlog.md` is the registry for agreed but unimplemented components.
-- `docs/superpowers/plans/2026-09-29-a10-hierarchy-sidecar.md` is the approved A5.1/A10/A11 implementation plan.
+- `docs/superpowers/plans/2026-09-29-a10-hierarchy-sidecar.md` is the approved A5/A10/A11 implementation plan.
+- `docs/superpowers/plans/2026-09-30-b1-page-first-chunking.md` is the approved B1 implementation plan.
 - When a tracked component begins or finishes, update the backlog and pipeline diagram in the same change.
 
 ## Project Note

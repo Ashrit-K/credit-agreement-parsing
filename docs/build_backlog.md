@@ -22,7 +22,7 @@ component IDs match the authoritative diagram in
 | A5 | Implemented | Docling PDF conversion pipeline | Run local English OCR, enable Docling's built-in heading-hierarchy inference and parsed-page generation, and record the configuration in the conversion profile and manifest. Do not add a custom document-layout parser. | A4 document format router | [A10 hierarchy-sidecar plan](superpowers/plans/2026-09-29-a10-hierarchy-sidecar.md), Task 1 |
 | A10 | Implemented | Build versioned hierarchy sidecar mapping | Transform unchanged canonical Docling JSON into a schema-versioned mapping keyed by canonical item IDs, with generic heading paths, page provenance, and the four frozen warning codes. Preserve source content and reading order; treat broken references and cycles as errors. | A5 and A9 canonical output | [A10 hierarchy-sidecar plan](superpowers/plans/2026-09-29-a10-hierarchy-sidecar.md), Task 2 |
 | A11 | Implemented | Persist sidecar and finalize Stage A artifact | Call A10 after canonical serialization, write `document.hierarchy.json`, finalize the manifest only after all artifacts exist, return an enriched `ConversionArtifact`, and require the sidecar for cache completeness. | A10 | [A10 hierarchy-sidecar plan](superpowers/plans/2026-09-29-a10-hierarchy-sidecar.md), Tasks 3-4 |
-| B1 | Pending | Build page-first provenance-preserving chunks | Consume the completed Stage A canonical JSON and hierarchy sidecar through a pure chunk builder plus persistence wrapper. Write `tmp/stage_b/<source-sha256>/document.chunks.json`; use page boundaries for paged documents and a 12,000-character reading-order fallback for page-less documents; keep canonical leaves, tables, and explicit Docling lists atomic; preserve item IDs, source wording, hierarchy context, and deterministic neighbor links without overlap or invented provenance. | A11 completed Stage A artifact | [B1 page-first chunking plan](superpowers/plans/2026-09-30-b1-page-first-chunking.md) |
+| B1 | Implemented | Build page-first provenance-preserving chunks | Consume the completed Stage A canonical JSON and hierarchy sidecar through a pure chunk builder plus persistence wrapper. Write `tmp/stage_b/<source-sha256>/document.chunks.json`; use page boundaries for paged documents and a 12,000-character reading-order fallback for page-less documents; keep canonical leaves, tables, and explicit Docling lists atomic; preserve item IDs, source wording, hierarchy context, and deterministic neighbor links without overlap or invented provenance. | A11 completed Stage A artifact | [B1 page-first chunking plan](superpowers/plans/2026-09-30-b1-page-first-chunking.md) |
 
 ## Verification evidence
 
@@ -76,6 +76,25 @@ component IDs match the authoritative diagram in
   203 PDF cells. Conversion and hierarchy validation still completed, and the
   warning remains a recorded parser limitation rather than a document-specific
   repair rule.
+
+### B1 page-first chunking — 2026-09-30
+
+- `UV_CACHE_DIR=.uv-cache uv run --frozen pytest tests/test_chunking.py -q`:
+  23 focused tests passed.
+- `UV_CACHE_DIR=.uv-cache uv run --frozen pytest -q`: 69 tests passed.
+- Tests cover source rendering, table grids, page boundaries, same-page splits,
+  atomic multi-page lists and tables, page-less attachment, heading-aware HTML
+  fallback, exact-once reading order, deterministic neighbor links, malformed
+  provenance rejection, atomic persistence, and cache invalidation.
+- `002_Facility_Agreement.pdf` produced 180 page-first chunks covering all
+  2,863 source items exactly once, including 158 chunks with explicit list
+  groups and 9 table items. Five chunks spanned pages because atomic source
+  structures crossed page boundaries; no chunk exceeded 12,000 characters.
+- `012_tmb-20250627xex10d1.htm` produced 11 page-less chunks covering all
+  1,523 source items exactly once. Its largest chunk contained 11,998
+  characters and no page number or coordinate was invented.
+- Repeated public API calls returned `cached=True` for both documents without
+  changing artifact modification times.
 
 ## A10 transformation acceptance summary
 

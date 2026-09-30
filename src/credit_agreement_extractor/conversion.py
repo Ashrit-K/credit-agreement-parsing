@@ -20,6 +20,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Iterator, Protocol
 
+from .hierarchy import build_hierarchy_sidecar
+
 
 class InvalidDocumentInputError(ValueError):
     """Raised when a source path cannot be converted safely."""
@@ -61,6 +63,7 @@ class ConversionArtifact:
     output_directory: Path
     markdown_path: Path
     docling_json_path: Path
+    hierarchy_json_path: Path
     manifest_path: Path
     cached: bool
 
@@ -74,7 +77,7 @@ _SUPPORTED_SUFFIXES = {
 # Bump this identifier whenever settings or serialization behavior changes in a
 # way that should invalidate earlier artifacts. The source hash alone only says
 # the input is identical; it does not say the conversion recipe is identical.
-_CONVERSION_PROFILE = "docling-json-v2-rapidocr-en-heading-hierarchy"
+_CONVERSION_PROFILE = "docling-json-v3-rapidocr-en-hierarchy-sidecar-v1"
 
 
 def _validate_source_path(source_path: str | Path) -> tuple[Path, str]:
@@ -132,6 +135,7 @@ def _artifact_paths(
         output_directory=output_directory,
         markdown_path=output_directory / "document.md",
         docling_json_path=output_directory / "document.docling.json",
+        hierarchy_json_path=output_directory / "document.hierarchy.json",
         manifest_path=output_directory / "manifest.json",
         cached=cached,
     )
@@ -142,6 +146,7 @@ def _is_complete_cache(artifact: ConversionArtifact) -> bool:
     required_paths = (
         artifact.markdown_path,
         artifact.docling_json_path,
+        artifact.hierarchy_json_path,
         artifact.manifest_path,
     )
     if not all(path.is_file() for path in required_paths):
@@ -149,6 +154,9 @@ def _is_complete_cache(artifact: ConversionArtifact) -> bool:
 
     try:
         manifest = json.loads(artifact.manifest_path.read_text(encoding="utf-8"))
+        sidecar = json.loads(
+            artifact.hierarchy_json_path.read_text(encoding="utf-8")
+        )
     except (OSError, json.JSONDecodeError):
         return False
 
@@ -156,6 +164,11 @@ def _is_complete_cache(artifact: ConversionArtifact) -> bool:
         manifest.get("status") == "completed"
         and manifest.get("source", {}).get("sha256") == artifact.source_sha256
         and manifest.get("conversion_profile") == _CONVERSION_PROFILE
+        and manifest.get("artifacts", {}).get("hierarchy_json")
+        == artifact.hierarchy_json_path.name
+        and manifest.get("hierarchy_sidecar", {}).get("schema_version") == 1
+        and sidecar.get("schema_version") == 1
+        and sidecar.get("source_sha256") == artifact.source_sha256
     )
 
 
@@ -249,6 +262,10 @@ def convert_document(
         return replace(artifact, cached=True)
 
     artifact.output_directory.mkdir(parents=True, exist_ok=True)
+    # A stale completed manifest must never survive a regeneration attempt. If
+    # conversion or A10 fails below, the absence of this final marker makes the
+    # incomplete directory unambiguously unusable as a cache entry.
+    artifact.manifest_path.unlink(missing_ok=True)
     active_converter = converter if converter is not None else _default_converter()
     with _normalized_source(
         path,
@@ -264,7 +281,21 @@ def convert_document(
         json.dumps(canonical, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
+    hierarchy = build_hierarchy_sidecar(
+        canonical,
+        source_sha256=source_sha256,
+    )
+    artifact.hierarchy_json_path.write_text(
+        json.dumps(hierarchy, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
 
+    warning_codes = list(
+        dict.fromkeys(warning["code"] for warning in hierarchy["warnings"])
+    )
+
+    # A11 is the completion boundary: this manifest is written only after all
+    # three document artifacts exist and the hierarchy mapping has validated.
     manifest = {
         "schema_version": 1,
         "conversion_profile": _CONVERSION_PROFILE,
@@ -296,9 +327,15 @@ def convert_document(
             "generate_parsed_pages": source_format == "pdf",
         },
         "gzip_normalized": gzip_normalized,
+        "hierarchy_sidecar": {
+            "schema_version": hierarchy["schema_version"],
+            "warning_count": len(hierarchy["warnings"]),
+            "warning_codes": warning_codes,
+        },
         "artifacts": {
             "markdown": artifact.markdown_path.name,
             "docling_json": artifact.docling_json_path.name,
+            "hierarchy_json": artifact.hierarchy_json_path.name,
         },
     }
     artifact.manifest_path.write_text(
