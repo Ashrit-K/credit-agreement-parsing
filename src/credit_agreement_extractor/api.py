@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from typing import Any
+from .tracing import traced
 
 from .pipeline import (
     PartyExtractionPipeline,
@@ -10,7 +11,9 @@ from .pipeline import (
 )
 
 
-def extract_parties(pdf_path: str | Path) -> dict[str, Any]:
+@traced('party_scaffold')
+def extract_parties(pdf_path: str | Path, *, debug: bool = False,
+                    run_id: str | None = None, trace_root: str | Path = 'tmp/runs') -> dict[str, Any]:
     """Return validated, JSON-serializable party data for one PDF.
 
     The default stages are intentionally non-substantive in v0.1. They establish

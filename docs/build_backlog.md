@@ -14,6 +14,7 @@ component IDs match the authoritative diagram in
   the pipeline diagram has been updated to a solid box and solid connections.
 - **Blocked:** implementation cannot proceed without a named dependency or
   decision.
+- **Deferred:** intentionally parked; not a current build dependency.
 
 ## Registry
 
@@ -24,7 +25,80 @@ component IDs match the authoritative diagram in
 | A11 | Implemented | Persist sidecar and finalize Stage A artifact | Call A10 after canonical serialization, write `document.hierarchy.json`, finalize the manifest only after all artifacts exist, return an enriched `ConversionArtifact`, and require the sidecar for cache completeness. | A10 | [A10 hierarchy-sidecar plan](superpowers/plans/2026-09-29-a10-hierarchy-sidecar.md), Tasks 3-4 |
 | B1 | Implemented | Build page-first provenance-preserving chunks | Consume the completed Stage A canonical JSON and hierarchy sidecar through a pure chunk builder plus persistence wrapper. Write `tmp/stage_b/<source-sha256>/document.chunks.json`; use page boundaries for paged documents and a 12,000-character reading-order fallback for page-less documents; keep canonical leaves, tables, and explicit Docling lists atomic; preserve item IDs, source wording, hierarchy context, and deterministic neighbor links without overlap or invented provenance. | A11 completed Stage A artifact | [B1 page-first chunking plan](superpowers/plans/2026-09-30-b1-page-first-chunking.md) |
 
+| B2 | Implemented | Propose topic labels with preset phrase rules | Classify every B1 chunk using the agreed eight topics and two subtopics; retain exact wording, rule IDs and cited source items without scoring match strength. B3 will refine the guesses into final labels. | B1 | [B2 topic signals plan](superpowers/plans/2026-10-01-b2-topic-signals.md) |
+| B3 | Implemented | Batched LLM topic reflection | All chunks, Luna/high, validated labels/citations, resumable batches, local telemetry/debug; v2 prompt with shared definitions and definition-sensitive caching. | B1, B2, Stage C | [B3/B4 plan](superpowers/plans/2026-10-01-b3-topic-reflection.md) |
+| B4 | Implemented | Topic map | Deterministic topic-to-chunk/item index; no summaries or LLM calls. | B3 | [B3/B4 plan](superpowers/plans/2026-10-01-b3-topic-reflection.md) |
+| C1–C5 | Implemented | Shared OpenCode transport | Routing, Responses/Chat adapters, overrides, local telemetry. | Credentials | [B3/B4 plan](superpowers/plans/2026-10-01-b3-topic-reflection.md) |
+| B5/B6 | Pending | Retrieval and evidence bundles | Retrieve original topic-specific evidence for requested extraction sleeves. | B4 | — |
+| Observability: Phoenix | Deferred | Trace UI | Revisit later; no B3/B4 dependency. | Local telemetry | — |
+| Human review HTML | Implemented | Saved-run stage/evidence reviewer | Review A/B1–B4/C inputs, artifacts and traces, with original text/pages next to classifications and clickable source citations; no fabricated data or paid calls. Live execution dashboard remains deferred. | Debug snapshots | [Saved-run review plan](superpowers/plans/2026-10-01-saved-run-html-review.md) |
+| Telemetry restart correlation | Pending | Distinguish executions within one run ID | Correlate failed classifications with their exact call/span rather than only source/batch/attempt, so restarting a run does not mark a later successful response failed. | Local events | — |
+
 ## Verification evidence
+
+### B3 topic-definition refinement — 2026-10-01
+
+- 156 full-suite tests passed. New checks prove every approved topic definition
+  reaches B3 and edits to definitions invalidate its validated checkpoints.
+- `b3-reflection-v2` uses shared `credit-topic-definitions-v1` meanings with
+  explicit boundaries. B2 rules, topic IDs, and B4 indexing remain unchanged.
+- The saved Amerigo run used v1: B2 proposed 98 chunk-topic assignments; B3
+  retained 51, removed 47, and added 9, leaving 60. B4 preserved all B3 labels
+  and citation sets across all 29 chunks. Agreement is not accuracy.
+- No paid v2 rerun yet. The HTML still shows the original saved run; manually
+  reviewed additions/removals and a fresh v2 comparison remain next steps.
+
+### Saved-run human review — 2026-10-01
+
+- 154 full-suite tests passed, including 12 review tests for saved-file loading,
+  path restrictions, missing-data behavior, source wording/pages, heading
+  resolution, canonical table cells, unclassified chunks, safe script embedding with punctuation
+  round-tripping, and distinct argument versus artifact snapshots.
+- Real Amerigo export contains 29 chunks, 9 final interest chunks and 2
+  unclassified chunks. Browser checks covered A artifact selection, B1/B2/B4
+  views, source-citation focus, chunk navigation, C transport snapshots,
+  pending-stage display, narrow-panel switching and desktop side-by-side layout.
+- Snapshot content came entirely from the existing run. No new conversion,
+  model calls or source edits; exported HTML contained no API key.
+- This is read-only saved-run review, not live progress tracking or persisted
+  reviewer judgments. A1–A11 were not independently instrumented in that run.
+
+### B3/B4 and Stage C — 2026-10-01
+
+- 142 full-suite tests passed. New checks cover routing, secret masking,
+  debug snapshots, malformed provider envelopes, strict taxonomy/citations,
+  exact chunk coverage, parent topics, batching, invalid-output/transient retries,
+  auth failure without retry, checkpoint resume after partial failure,
+  settings/input invalidation, model-substitution rejection, deterministic B4
+  order including inherited headings, and local analytics.
+- One live synthetic B3/B4 run returned `gpt-5.6-luna` and `effort=high`:
+  423 input tokens, 110 output tokens (including 53 reasoning tokens), one
+  request, 3.16 seconds. Interest and maturity labels cited the correct source
+  items. These are wiring checks, not a corpus classification benchmark.
+- The gateway returned no actual billed cost. Its recorded attempt remains
+  unknown; the subsequently verified 2026-10-01 Luna rate snapshot estimates
+  this usage at USD 0.0002166, not a billing assertion. Unknown models/tiers
+  remain unknown unless explicit rates are supplied.
+- Responses is live-verified; Chat Completions has fake-HTTP coverage only.
+- Debug capture is available across existing and new public pipeline APIs.
+  Local events and snapshots are under ignored `tmp/runs/`; keys never logged.
+- Phoenix deferred. B5/B6 and Stage D are not implemented. Source corpus and
+  existing staging imports were not modified; no paid corpus sweep performed.
+
+## B2 build entry — 2026-10-01
+
+- **Status:** Implemented.
+- **Outcome:** Versioned eight-topic heuristic classification with PIK toggle
+  and call-protection subtopics, unscored heuristic signals, source IDs,
+  exact matched wording, and provisional labels for every B1 chunk.
+- **Dependency:** B1; B3's LLM reflection is now implemented.
+- **Plan:** [B2 topic signals](superpowers/plans/2026-10-01-b2-topic-signals.md).
+- **Verification:** 29 focused tests and 98 full-suite tests passed. Real B1
+  artifacts produced 180 PDF classifications (3 unmatched) and 11 HTM
+  classifications (0 unmatched); every signal's item IDs resolved.
+- **Observed limitation:** Common role and rate words label many chunks. These
+  are unscored initial guesses, subject to B3's LLM reflection.
+
 
 ### A5 PDF hierarchy configuration — 2026-09-30
 

@@ -63,13 +63,34 @@ For A10:
 - Limit initial hierarchy warnings to `no_headings`, `flat_levels`, `skipped_levels`, and `non_monotonic_pages`.
 - Treat broken references, malformed heading levels, and cycles as errors rather than warnings.
 
-B1 is implemented. Planned Stage B work now begins at B2: deterministic topic
-signals and a batched inexpensive LLM classifier will feed a
-provenance-preserving topic map. The map must point to original source items
-rather than replace them with summaries. B5 and B6 will retrieve and package
+B1 and B2 are implemented. `classify_chunks()` writes provisional topic guesses
+and cited rule evidence in `document.topic-signals.json`. The eight-topic
+vocabulary and PIK/call-protection subtopics are versioned in
+`topic_taxonomy.py`. Every matching rule proposes a label without scores or
+strength categories. B3 independently assesses source evidence and refines
+the guesses into final classifications; all chunks remain eligible, including
+unmatched ones. B3's `reflect_topics()` is implemented: Luna/high by default,
+up to five chunks/24,000 evidence characters per batch, approved final labels
+with verified item citations, bounded retries and hash/settings-keyed validated
+checkpoints. B3's `b3-reflection-v2` prompt consumes shared, versioned topic
+definitions from `topic_taxonomy.py`; definition hashes invalidate checkpoint
+reuse independently of unchanged topic IDs and B2 phrase rules.
+No possible-label bucket or Jev/verifier layer. B4's
+`build_topic_map()` validates classifications and persists a deterministic
+topic-to-chunk/item index, not summaries. B5 and B6 remain pending and will retrieve and package
 original topic-specific evidence for extraction sleeves.
 
 Stage C is a cross-cutting LLM interface, not a sequential document-processing stage. It routes OpenCode requests through explicit, tested model-to-API mappings. The agreed default is `gpt-5.6-luna` with medium reasoning, with call-time overrides for model, reasoning effort, and API style. Support Responses and Chat Completions adapters; Claude/Messages support is not currently required. Every purple LLM box uses this shared transport contract with its own system prompt, evidence, and response schema; do not route document artifacts through C in the pipeline diagram.
+
+Stage C's `OpenCodeClient` is implemented. Responses/Luna/high was checked live;
+Chat Completions is fake-HTTP tested, not live-verified. Use the explicit
+application User-Agent; the default Python client was blocked by Cloudflare.
+Do not silently substitute models. All public file/pipeline APIs support
+`debug`, `run_id`, and `trace_root`: local basic JSONL telemetry always persists;
+debug adds intermediate artifacts, prompts/responses, and sanitized validation
+diagnostics. Never capture keys, authorization headers, or hidden reasoning.
+`summarize_run()` provides local analytics. Estimates use dated gateway rates;
+unknown costs remain unknown. Phoenix is deferred, not a build dependency.
 
 Planned Stage D is sleeve-based LLM extraction. Each independently testable sleeve owns one coherent field family, system prompt, output schema, topic-map evidence packet, and validation rules. Initial sleeves cover parties, interest terms, maturity and extension, covenants, and repayment terms; add further field-family sleeves without redesigning the pipeline. Run only the sleeves requested for a job. Require a shared result envelope with structured values, uncertainty, and cited Docling item IDs. Validate each sleeve independently, broaden topic-map retrieval only for affected sleeves, resolve citations to verified evidence, and merge validated sleeves into the requested document-level JSON.
 
@@ -98,10 +119,18 @@ Planned Stage D is sleeve-based LLM extraction. Each independently testable slee
 
 ## Build Tracking
 
+The saved-run HTML reviewer (`review.py` / `review.html`) is read-only and
+separate from pipeline execution. Use actual logged A/B1–B4/C inputs, outputs
+and events; join item IDs to original text/pages/table cells/heading context.
+B2 review uses provisional rule matches, B3/B4 use final citations, and
+unclassified chunks stay visible. Never substitute sample data or infer
+unrecorded substep progress. The live progress dashboard remains parked.
+
 - `docs/conversion_pipeline.md` is the authoritative architecture and status diagram.
 - `docs/build_backlog.md` is the registry for agreed but unimplemented components.
 - `docs/superpowers/plans/2026-09-29-a10-hierarchy-sidecar.md` is the approved A5/A10/A11 implementation plan.
 - `docs/superpowers/plans/2026-09-30-b1-page-first-chunking.md` is the approved B1 implementation plan.
+- `docs/superpowers/plans/2026-10-01-b3-topic-reflection.md` records the B3/B4 and local telemetry build.
 - When a tracked component begins or finishes, update the backlog and pipeline diagram in the same change.
 
 ## Project Note

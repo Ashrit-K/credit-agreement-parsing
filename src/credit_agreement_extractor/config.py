@@ -1,7 +1,7 @@
-"""Environment-backed configuration for a future OpenCode model client.
+"""Environment-backed credentials/configuration for the shared OpenCode client.
 
 Loading settings is separate from running the scaffold pipeline. This lets the
-public function work without credentials until a live provider adapter is added,
+conversion and scaffold functions work without credentials,
 and ``SecretStr`` prevents accidental key disclosure in logs and tracebacks.
 """
 
