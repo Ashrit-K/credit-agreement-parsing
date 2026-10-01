@@ -115,14 +115,83 @@ or Stage A input-hash mismatch rebuilds only B1 and does not rerun Docling.
 
 ## Topic-map and evidence rule
 
+B2 is implemented through `classify_chunks(chunks)`. It writes
+`document.topic-signals.json` beside the B1 artifact, recording a versioned
+taxonomy/rule set, the B1 file hash, and one provisional classification per
+chunk. Eight topics cover parties, facilities, interest, maturity, repayment,
+covenants, guarantees/security, and defaults/remedies. PIK toggle and call
+protection are explicit subtopics that also assign their parent topics.
+
+Matching uses case-insensitive phrases, heading context, bounded wildcards,
+benchmark aliases, and nearby phrase combinations. Signals retain exact matched
+wording, rule IDs, source kinds, and canonical evidence IDs, without strength
+scores or categories. B3 independently assesses the source and refines these
+guesses into final labels. Every chunk reaches B3, including unmatched chunks.
+
+## B3/B4 contracts and local observability
+
+`reflect_topics(chunks, signals)` is implemented. It sends up to five chunks
+per batch, bounded by 24,000 serialized evidence characters (oversized atomic
+chunks run alone), using `gpt-5.6-luna` with high reasoning by default. Model,
+reasoning effort, and API style can be overridden. Source text, table content,
+heading context, and B2 proposals reach the model; verbose keyword signals do not.
+The `b3-reflection-v2` prompt uses shared, versioned topic definitions from
+`topic_taxonomy.py`, including boundaries between incidental party mentions,
+payment defaults, interest terms, and prepayment premiums. Both the prompt and
+definition hashes participate in checkpoint identity. Topic IDs and B2 rules
+are unchanged; saved v1 runs remain historical evidence, not v2 evaluations.
+The current full suite has 156 passing tests. The saved 29-chunk Amerigo run
+still reflects v1; B4 preserves its B3 labels and citation sets exactly rather
+than performing another classification or denoising pass. No live v2 quality
+improvement has been measured yet.
+
+B3 validates one result per chunk, approved topics only, and supporting item IDs
+within each supplied chunk/heading context. It adds parents for approved
+subtopics. There are no possible-topic buckets, confidence scores, Jev gates,
+or second opinions. Two attempts maximum handle transient API or invalid-output
+failures; authentication errors and model substitutions stop immediately.
+
+Validated batches are checkpointed by input hashes and settings. Repeated calls
+reuse matching checkpoints; `force=True` requests fresh classification. A failed
+new run does not replace the last successfully completed result. B3 persists
+`document.topic-classifications.json` beside B1; `build_topic_map(chunks,
+classifications)` revalidates it and writes `document.topic-map.json`. B4 indexes
+topic -> chunk IDs and cited canonical item IDs in source order, including an
+explicit unclassified-chunk list. It neither summarizes content nor calls an LLM.
+
+Stage C's shared `OpenCodeClient` implements explicit model routing, Responses
+and Chat Completions adapters, and the application User-Agent required by the
+tested gateway. Its general reasoning default is medium; B3 explicitly selects
+high. Unknown model routes need an explicit supported API-style override.
+Responses was verified live; Chat Completions is covered by fake HTTP tests,
+not a paid live open-model trial. Model-returned identities must match B3 requests.
+
+All public pipeline/file APIs accept `debug=False`, `run_id=None`, and
+`trace_root='tmp/runs'`. Use one run ID across separately called stages to link
+them. Metadata and LLM usage/latency/cost are always appended to
+`tmp/runs/<run-id>/events.jsonl`; `debug=True` also copies intermediate artifacts,
+prompts, responses, and validation diagnostics under `debug/`. Secrets and
+authorization headers are excluded; hidden model reasoning is not captured.
+`summarize_run(run_id)` aggregates requests, retries, usage, costs, failures,
+and latency by model/stage/document. Costs are reported only for explicit
+amount/currency objects, otherwise estimated from dated gateway rates or unknown.
+The default pricing snapshot covers Luna inputs up to 272K tokens, checked
+2026-10-01; other models/tiers need explicit rates. Reasoning tokens are already
+included in output totals and are not charged twice. These estimates are not bills.
+
+Phoenix is deferred and is not a runtime dependency. B5/B6 retrieval and Stage D
+extraction sleeves remain pending. Small smoke tests verify wiring, not legal
+classification accuracy across the corpus.
+
 Implemented B1 begins from canonical Docling items and builds page-first chunks. Page
 boundaries guide chunk starts and ends, while tables remain atomic where
 practical and lists are not split midway. Each chunk keeps its item IDs, page
 numbers, neighboring chunk links, and any A10 heading path.
 
-Every chunk then receives one or more topic labels from a preset credit-
-agreement taxonomy. Deterministic signals and a batched cheap-LLM classifier
-feed a provenance-preserving topic map; neither may replace the underlying
+Every chunk receives zero or more provisional topic labels from the preset
+credit-agreement taxonomy. B3 refines B2's proposals with a batched LLM
+reflection step, whose final labels feed the provenance-preserving topic map;
+neither may replace the underlying
 source text with a summary. The map retrieves likely evidence for a requested
 field, and request assembly sends that original evidence and its identifiers to
 the extraction model.
@@ -152,6 +221,26 @@ through its adapter boxes.
 
 ## Pipeline
 
+### Human review surface
+
+The implemented read-only HTML exporter in `review.py` is an inspection surface,
+not a new document-processing stage. It loads an existing debug run and exposes
+A conversion artifacts, B1 source chunks, B2 provisional labels/rule evidence,
+B3 final classifications and model attempts, B4 topic assignments, and C
+provider payloads/responses. Original source text, pages, tables and heading
+context are displayed beside labels; clicking a citation focuses its source.
+Unclassified chunks remain reviewable. B2 filters and highlights its own rule
+matches, while B3/B4 use final labels/citations. Raw inputs, output artifacts
+and events are expandable. Narrow browser panels use source/results switching;
+wide browsers show them side-by-side.
+
+Exports are snapshots, refreshed by rerunning the export command in README.
+They do not run conversion/models or invent outputs for B5/B6/D. Stage A's
+substeps were not separately traced in the current evaluation run. The full
+live pipeline/progress dashboard is parked; Phoenix remains deferred.
+
+### Architecture diagram
+
 Status and cognitive work use separate visual signals:
 
 - Capital letters identify major stages; numbers identify components within a
@@ -164,8 +253,9 @@ Status and cognitive work use separate visual signals:
   implementation status.
 
 A10, A11, and B1 are implemented and tested. Their boxes and the A11-to-B1
-connection are solid. B1-to-B2 and every later Stage B connection remain
-dashed because topic classification, mapping, and retrieval are pending.
+connection are solid. B1-to-B2-to-B3-to-B4 is solid; B3 is purple because it
+uses an LLM. B4-to-B5 and later connections remain dashed: retrieval and
+extraction are pending. Shared C1–C5 transport is implemented and tested.
 
 ```mermaid
 flowchart TD
@@ -189,14 +279,13 @@ flowchart TD
     subgraph B_GROUP["B — Topic-map construction and evidence retrieval"]
         B1[B1 — Build page-first chunks retaining Docling item IDs]
         B2[B2 — Apply preset topic taxonomy and deterministic signals]
-        B3[B3 — Batched cheap-LLM multi-label topic classification]
+        B3[B3 — LLM reflection: refine B2 guesses into final topic labels]
         B4[B4 — Build provenance-preserving topic map]
         B5[B5 — Retrieve topic-specific source evidence]
         B6[B6 — Assemble topic-evidence bundle with source IDs]
-        B1 -.-> B2
-        B1 -.-> B3
-        B2 -.-> B4
-        B3 -.-> B4
+        B1 --> B2
+        B2 --> B3
+        B3 --> B4
         B4 -.-> B5
         B5 -.-> B6
     end
@@ -207,10 +296,10 @@ flowchart TD
         C3[C3 — OpenCode model router]
         C4[C4 — Responses API adapter]
         C5[C5 — Chat Completions API adapter]
-        C1 -.-> C3
-        C2 -.-> C3
-        C3 -.-> C4
-        C3 -.-> C5
+        C1 --> C3
+        C2 --> C3
+        C3 --> C4
+        C3 --> C5
     end
 
     subgraph D_GROUP["D — Sleeve-based LLM extraction and validation"]
@@ -259,9 +348,10 @@ flowchart TD
     classDef cognitivePending fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,stroke-dasharray:6 4,color:#1f2937;
 
     class A1,A2,A3,A3_1,A4,A5,A6,A7,A8,A9,A10,A11 implemented;
-    class B1 implemented;
-    class B2,B4,B5,B6,C1,C2,C3,C4,C5,D1,D2,D4,D5,D6,D7,D8,D9 pending;
-    class B3,D3_1,D3_2,D3_3,D3_4,D3_5,D3_6 cognitivePending;
+    class B1,B2,B4,C1,C2,C3,C4,C5 implemented;
+    class B3 cognitiveImplemented;
+    class B5,B6,D1,D2,D4,D5,D6,D7,D8,D9 pending;
+    class D3_1,D3_2,D3_3,D3_4,D3_5,D3_6 cognitivePending;
 ```
 
 The development cache shortcut returns through A3.1 only when all four files
@@ -272,4 +362,4 @@ completed manifest last before returning the enriched artifact.
 B1 runs separately through `build_chunks()`. It reuses a validated Stage B
 artifact when possible; otherwise it deterministically rebuilds
 `document.chunks.json` from the two Stage A JSON artifacts. B1 is now the solid
-handoff from completed conversion into the still-pending topic-map components.
+handoff from completed conversion into implemented B2/B3/B4 topic mapping.

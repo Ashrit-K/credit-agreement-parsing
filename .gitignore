@@ -14,8 +14,11 @@ output/golden_set/*.csv
 dist/
 build/
 .pytest_cache/
+.superpowers/
 tmp/converted/
 tmp/stage_b/
+tmp/runs/
+tmp/b3-smoke/
 archive/*.bundle
 :memory:.ses
 tmp/hierarchy_experiment.py

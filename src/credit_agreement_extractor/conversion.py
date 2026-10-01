@@ -21,6 +21,7 @@ from tempfile import TemporaryDirectory
 from typing import Any, Iterator, Protocol
 
 from .hierarchy import build_hierarchy_sidecar
+from .tracing import traced
 
 
 class InvalidDocumentInputError(ValueError):
@@ -235,11 +236,15 @@ def _normalized_source(
         yield normalized_path, True
 
 
+@traced('A')
 def convert_document(
     source_path: str | Path,
     output_root: str | Path = Path("tmp/converted"),
     *,
     converter: DocumentConverterLike | None = None,
+    debug: bool = False,
+    run_id: str | None = None,
+    trace_root: str | Path = 'tmp/runs',
 ) -> ConversionArtifact:
     """Convert one PDF/HTML source and persist canonical and readable artifacts.
 

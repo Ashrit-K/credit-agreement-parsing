@@ -13,6 +13,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from .tracing import traced
 
 
 class InvalidChunkInputError(ValueError):
@@ -666,11 +667,15 @@ def _artifact_paths(
     )
 
 
+@traced('B1')
 def build_chunks(
     conversion_artifact: Any,
     output_root: str | Path = Path("tmp/stage_b"),
     *,
     target_characters: int = _DEFAULT_TARGET_CHARACTERS,
+    debug: bool = False,
+    run_id: str | None = None,
+    trace_root: str | Path = 'tmp/runs',
 ) -> ChunkArtifact:
     """Persist or reuse B1 chunks for a completed Stage A artifact."""
     if target_characters <= 0:

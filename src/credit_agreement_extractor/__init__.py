@@ -8,8 +8,16 @@ from .conversion import (
     convert_document,
 )
 from .hierarchy import InvalidHierarchyInputError
+from .topic_signals import InvalidTopicInputError, TopicSignalsArtifact, classify_chunks
+from .topic_reflection import TopicClassificationArtifact, reflect_topics
+from .topic_map import TopicMapArtifact, build_topic_map
+from .llm import OpenCodeClient, LlmResponse, LlmError
+from .tracing import summarize_run
 
 __all__ = [
+    "TopicClassificationArtifact", "reflect_topics", "TopicMapArtifact", "build_topic_map",
+    "OpenCodeClient", "LlmResponse", "LlmError",
+    "summarize_run",
     "ConversionArtifact",
     "ChunkArtifact",
     "InvalidChunkInputError",
@@ -18,4 +26,7 @@ __all__ = [
     "convert_document",
     "build_chunks",
     "extract_parties",
+    "InvalidTopicInputError",
+    "TopicSignalsArtifact",
+    "classify_chunks",
 ]
