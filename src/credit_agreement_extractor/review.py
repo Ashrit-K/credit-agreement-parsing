@@ -14,6 +14,30 @@ import re
 from .tracing import safe_data
 
 
+def review_layout(data: dict) -> str:
+    """Only explicit saved metadata selects the current numbering."""
+    def marked(value):
+        if isinstance(value, dict):
+            return (value.get('pipeline_layout') == 'stage-b-v2'
+                    or value.get('profile', {}).get('pipeline_layout') == 'stage-b-v2')
+        return False
+    if data.get('pipeline_layout') == 'stage-b-v2':
+        return 'stage-b-v2'
+    if any(event.get('stage') in ('B2', 'B3')
+           and event.get('event') == 'pipeline_layout' and marked(event)
+           for event in data.get('events', [])):
+        return 'stage-b-v2'
+    for snapshot in data.get('snapshots', []):
+        if snapshot['filename'].startswith(('B2-input-artifacts-', 'B2-final-',
+                                            'B2-output-', 'B3-final-', 'B3-output-')):
+            value = snapshot['data']
+            if marked(value) or any(marked(value.get(key)) for key in (
+                    'topic_passages_json_path', 'topic_classifications_json_path',
+                    'topic_passage_map_json_path', 'topic_map_json_path')):
+                return 'stage-b-v2'
+    return 'historical'
+
+
 def load_run_review(run_id: str, *, trace_root: str | Path = 'tmp/runs') -> dict:
     """Read only known pipeline snapshots inside one validated run directory."""
     if not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', run_id):
@@ -44,8 +68,10 @@ def export_run_review(run_id: str, destination: str | Path, *,
                       trace_root: str | Path = 'tmp/runs') -> Path:
     """Embed actual captured data, escaping HTML script delimiters safely."""
     data = load_run_review(run_id, trace_root=trace_root)
+    data['pipeline_layout'] = review_layout(data)
     data['review'] = build_topic_review(data)
     data['stages'] = build_stage_review(data)
+    data['model_exchanges'] = build_model_exchanges(data)
     # The human view already contains resolved source paragraphs. Do not embed
     # repeated full document snapshots (A, B1 and their downstream inputs) a
     # second time. Keep only model exchanges and the source manifest alongside
@@ -53,7 +79,9 @@ def export_run_review(run_id: str, destination: str | Path, *,
     compact = []
     for snapshot in data['snapshots']:
         name = snapshot['filename']
-        if name.startswith(('B3-request-', 'B3-response-', 'B3-validation-error-', 'C-request-', 'C-response-')):
+        classification = 'B2' if data['pipeline_layout'] == 'stage-b-v2' else 'B3'
+        if name.startswith(tuple(classification + suffix for suffix in
+                                ('-request-', '-response-', '-validation-error-')) + ('C-request-', 'C-response-')):
             compact.append(snapshot)
         elif name.startswith('A-output-artifacts-'):
             compact.append({'filename':name, 'data':{
@@ -70,6 +98,46 @@ def export_run_review(run_id: str, destination: str | Path, *,
     return target
 
 
+def build_model_exchanges(data: dict) -> list[dict]:
+    """Pair attempts by identity, not by neighboring log position.
+
+    Concurrent responses can arrive in any order. New traces carry a unique
+    attempt ID; historical traces use batch/attempt and stop at the next
+    request with that same key, preserving restarted-run boundaries.
+    Filename references avoid duplicating large model payloads in the export.
+    """
+    snapshots = data.get('snapshots', [])
+    stage = 'B2' if review_layout(data) == 'stage-b-v2' else 'B3'
+    exchanges = []
+    for index, request in enumerate(snapshots):
+        if not request['filename'].startswith(stage + '-request-'):
+            continue
+        metadata = request['data']
+        attempt_id = metadata.get('attempt_id')
+
+        def matches(snapshot):
+            other = snapshot['data']
+            if attempt_id:
+                return other.get('attempt_id') == attempt_id
+            return (other.get('batch_id'), other.get('attempt')) == (
+                metadata.get('batch_id'), metadata.get('attempt'))
+
+        response = error = None
+        for snapshot in snapshots[index + 1:]:
+            if not matches(snapshot):
+                continue
+            name = snapshot['filename']
+            if not attempt_id and name.startswith(stage + '-request-'):
+                break
+            if name.startswith(stage + '-response-') and response is None:
+                response = name
+            if name.startswith(stage + '-validation-error-') and error is None:
+                error = name
+        exchanges.append({'request': request['filename'],
+                          'response': response, 'error': error})
+    return exchanges
+
+
 def build_stage_review(data: dict) -> dict:
     """Expose actual boundary inputs/outputs once per implemented stage.
 
@@ -78,24 +146,46 @@ def build_stage_review(data: dict) -> dict:
     Preserve both, and label substeps without events as uninstrumented in the UI.
     """
     result = {}
+    current = review_layout(data) == 'stage-b-v2'
     for stage in ('A', 'B1', 'B2', 'B3', 'B4', 'C'):
         def last(prefix):
             found = [s['data'] for s in data['snapshots']
                      if s['filename'].startswith(prefix + '-')
                      and not (prefix.endswith(('-input', '-output'))
                               and s['filename'].startswith(prefix + '-artifacts-'))]
-            return found[-1] if found else None
+            value = found[-1] if found else None
+            if value is not None and prefix.endswith('-artifacts'):
+                return {key: item for key, item in value.items() if key != '_trace'}
+            return value
         inputs = {}
         # Some calls capture multiple argument artifacts in separate snapshots.
         # Merging fields retains their actual input files without duplicating
         # the repeated captures created by resuming the same run.
         for snapshot in data['snapshots']:
             if snapshot['filename'].startswith(stage + '-input-artifacts-'):
-                inputs.update(snapshot['data'])
+                inputs.update({key: value for key, value in snapshot['data'].items()
+                               if key != '_trace' and not (current and stage == 'B2'
+                                                          and key in ('signals', 'topic_signals_json_path'))})
         result[stage] = {'input':last(stage + '-input'), 'input_artifacts':inputs,
                          'output':last(stage + '-output-artifacts'),
                          'return_value':last(stage + '-output'),
                          'events':[event for event in data.get('events', []) if event.get('stage') == stage]}
+        if current and stage == 'B2' and result[stage]['output']:
+            result[stage]['output'] = {key: value for key, value in result[stage]['output'].items()
+                                       if key != 'topic_signals_json_path'}
+        if stage == 'C':
+            boundaries = [snapshot for snapshot in data['snapshots']
+                          if snapshot['filename'].startswith(('C-input-', 'C-output-'))
+                          and not snapshot['filename'].startswith(('C-input-artifacts-', 'C-output-artifacts-'))]
+            span_id = (boundaries[-1]['data'].get('_trace') or {}).get('span_id') if boundaries else None
+            if span_id:
+                # The latest boundary may finish before an earlier request, or
+                # have no response yet. Never pair independent "latest" values.
+                for field, prefix in (('input', 'C-input-'), ('return_value', 'C-output-')):
+                    matching = [snapshot['data'] for snapshot in boundaries
+                                if snapshot['filename'].startswith(prefix)
+                                and (snapshot['data'].get('_trace') or {}).get('span_id') == span_id]
+                    result[stage][field] = matching[-1] if matching else None
     return result
 
 
@@ -112,14 +202,18 @@ def build_topic_review(data: dict) -> dict | None:
 
     chunks = (captured('B1-output-artifacts') or {}).get('chunks_json_path')
     signals = (captured('B2-output-artifacts') or {}).get('topic_signals_json_path')
-    final = captured('B3-final')
-    topic_map = captured('B4-final')
-    if not all((chunks, signals, final, topic_map)):
+    layout = review_layout(data)
+    classification_stage, map_stage = ('B2', 'B3') if layout == 'stage-b-v2' else ('B3', 'B4')
+    final = captured(classification_stage + '-final')
+    topic_map = captured(map_stage + '-final')
+    use_b2 = layout != 'stage-b-v2' and (final or {}).get('profile', {}).get('use_b2', True)
+    if not all((chunks, final, topic_map)) or (use_b2 and not signals):
         return None
     canonical = (captured('A-output-artifacts') or {}).get('docling_json_path', {})
     canonical_items = {item['self_ref']:item for section in ('texts', 'tables')
                        for item in canonical.get(section, []) if 'self_ref' in item}
-    guesses = {row['chunk_id']:row for row in signals['classifications']}
+    # A stale B2 snapshot in the run must not appear as input to a bypassed B3.
+    guesses = {row['chunk_id']:row for row in signals['classifications']} if use_b2 else {}
     labels = {row['chunk_id']:row for row in final['classifications']}
     rows = []
     for chunk in chunks['chunks']:
@@ -141,10 +235,37 @@ def build_topic_review(data: dict) -> dict | None:
         rows.append({'chunk_id':chunk['chunk_id'], 'pages':chunk.get('pages', []),
                      'content':chunk.get('content', ''), 'items':paragraphs,
                      'headings':list(headings.values()),
-                     'proposed_topics':guesses[chunk['chunk_id']]['proposed_topics'],
-                     'rule_evidence':guesses[chunk['chunk_id']],
+                     'proposed_topics':guesses[chunk['chunk_id']]['proposed_topics'] if use_b2 else [],
+                     'rule_evidence':guesses[chunk['chunk_id']] if use_b2 else None,
                      'final_topics':labels[chunk['chunk_id']]['topics']})
-    return {'topics':{topic:[ref['chunk_id'] for ref in refs] for topic, refs in topic_map['topics'].items()},
+    version = topic_map.get('schema_version', 1)
+    if version not in (1,2) or final.get('schema_version',1) != version:
+        raise ValueError('Review requires matching supported B3/B4 schemas.')
+    passage_topics = {}
+    if version == 2:
+        lookup = {i['item_id']:i for row in rows for i in row['items']}
+        passage_topics = {topic:[] for topic in topic_map['topics']}
+        for topic, groups in topic_map['topics'].items():
+            for group in groups:
+                refs = group['evidence_item_ids']+group['context_item_ids']
+                if not set(refs) <= set(lookup):
+                    raise ValueError('Saved passage citation has no captured source item.')
+                targets = [row['chunk_id'] for row in rows for label in row['final_topics']
+                           if label['topic'] == topic and group in label['groups']]
+                if not targets:
+                    raise ValueError('B4 group does not match the captured B3 result.')
+                passage_topics[topic].append({**group,'topic':topic,'target_chunk_ids':targets,
+                    'evidence_items':[lookup[i] for i in group['evidence_item_ids']],
+                    'context_items':[lookup[i] for i in group['context_item_ids']]})
+        # Chunk-based navigation remains available for B1, B2 and unclassified
+        # sources. It is not the default passage evidence display for B3/B4.
+        topics = {topic:list(dict.fromkeys(c for g in groups for c in g['target_chunk_ids']))
+                  for topic, groups in passage_topics.items()}
+    else:
+        topics = {topic:[ref['chunk_id'] for ref in refs] for topic, refs in topic_map['topics'].items()}
+    return {'schema_version':version,'legacy_citations':version == 1,'use_b2':use_b2,
+            'pipeline_layout':layout,'classification_stage':classification_stage,'map_stage':map_stage,
+            'passage_topics':passage_topics,'topics':topics,
             'unclassified_chunk_ids':topic_map['unclassified_chunk_ids'], 'chunks':rows}
 
 

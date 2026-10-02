@@ -20,13 +20,12 @@ than inventing borrower or lender data.
 | Gzip-wrapped SEC HTML handling | Implemented and tested |
 | Canonical Docling JSON, readable Markdown, and manifest | Implemented and tested |
 | Docling PDF heading-hierarchy inference | Implemented and tested |
-| Hierarchy sidecar transformation | Implemented and tested (`A10`) |
+| Hierarchy sidecar transformation | Implemented and tested (`A10`); optional, default on |
 | Sidecar persistence and final Stage A artifact | Implemented and tested (`A11`) |
 | Page-first provenance-preserving chunks | Implemented and tested (`B1`) |
-| Heuristic topic guesses and cited rule matches | Implemented and tested (`B2`) |
-| LLM topic reflection and provenance-preserving topic map | Implemented and tested (`B3`, `B4`) |
-| Evidence retrieval and bundle assembly | Planned (`B5`, `B6`) |
-| Shared OpenCode LLM interface | Implemented and tested (`Stage C`; Responses live, Chat fake-HTTP tested) |
+| LLM passage classification and provenance-preserving topic map | Implemented and tested (`B2`, `B3`) |
+| Evidence retrieval and bundle assembly | Planned (`B4`, `B5`) |
+| Shared OpenCode LLM interface | Implemented and tested (`Stage C`; Responses, Chat and Qwen Messages tiny-live checked) |
 | Local telemetry and opt-in detailed debug capture | Implemented; Phoenix deferred |
 | Sleeve-based legal-term extraction | Planned (`Stage D`) |
 
@@ -53,7 +52,7 @@ cd credit-agreement-parsing
 uv sync --python 3.11
 ```
 
-To enable B3 live LLM calls, copy the environment template and add
+To enable B2 live LLM calls, copy the environment template and add
 credentials only to the local `.env` file:
 
 ```bash
@@ -68,7 +67,7 @@ OPENCODE_API_STYLE=responses
 ```
 
 The `.env` file is ignored by Git. Never commit API keys or other credentials.
-The shared OpenCode client is wired into B3. B3 defaults to Luna/high; the
+The shared OpenCode client is wired into B2. B2 defaults to Luna/high; the
 general client defaults to medium reasoning. Model/API-style/reasoning overrides
 are available per call. The legal extraction sleeves are not yet implemented.
 
@@ -83,7 +82,7 @@ from credit_agreement_extractor import convert_document
 artifact = convert_document("raw_documents/pdf/example.pdf")
 
 print(artifact.docling_json_path)
-print(artifact.hierarchy_json_path)
+print(artifact.hierarchy_json_path)  # A10 sidecar; None only with use_hierarchy=False
 print(artifact.markdown_path)
 print(artifact.manifest_path)
 ```
@@ -99,17 +98,20 @@ By default, conversion artifacts are stored under a content-addressed folder:
 ```text
 tmp/converted/<source-sha256>/
 ├── document.docling.json  # canonical downstream source
-├── document.hierarchy.json # generic hierarchy keyed by canonical item IDs
+├── document.hierarchy.json # heading context keyed by canonical IDs
 ├── document.md            # readable development and review copy
 └── manifest.json          # source identity and conversion configuration
 ```
 
 The SHA-256 value is a fingerprint calculated from the source bytes. Repeating
 a conversion can reuse a complete cache entry only when both the source
-fingerprint and conversion profile match. Cache validation also requires a
-schema-version-1 hierarchy sidecar carrying the same source fingerprint. A10
-builds that deterministic sidecar from canonical Docling JSON, and A11 writes
-the manifest last before returning the completed Stage A artifact.
+fingerprint, mode and conversion profile match. A11 writes the manifest last.
+A10 is enabled by default and writes `document.hierarchy.json`. Explicit
+`convert_document(path, use_hierarchy=False)` writes three artifacts under
+`tmp/converted/<hash>/a10-disabled/` and returns no hierarchy path.
+Enabled cache validation requires that sidecar; a missing file is not treated
+as an ablation. Both modes preserve each other's outputs. A5 Docling heading
+inference remains enabled; A10 off removes added heading paths, not source text.
 
 ## Build page-first chunks
 
@@ -141,21 +143,16 @@ bounding-box and character-span provenance can be resolved from Stage A.
 
 The persisted artifact also serves as a development cache. It is reused only
 when the source, schema, chunking profile, canonical JSON hash, and hierarchy
-sidecar hash all match.
-
-## Propose topics for chunks
-
-B2 is available through `classify_chunks(chunks)`, which writes
-`document.topic-signals.json` alongside `document.chunks.json`. Its eight-topic
-vocabulary and PIK/call-protection subtopics live in `topic_taxonomy.py`.
-Every match produces a provisional label and cited rule evidence, without
-strength or confidence scores. B3's LLM reflection refines them.
+sidecar hash (null when disabled) and mode all match. Enabled outputs retain
+`tmp/stage_b/<source-sha256>/`. Without A10, B1 reads canonical body references
+for order, pages and list/container ancestry, leaves heading paths empty, and
+still rejects broken references. B2, B3 and the reviewer support both modes.
 
 ## Classify topics and build the map
 
 ```python
 from credit_agreement_extractor import (
-    convert_document, build_chunks, classify_chunks, reflect_topics,
+    convert_document, build_chunks, reflect_topics,
     build_topic_map, summarize_run,
 )
 
@@ -163,31 +160,72 @@ from credit_agreement_extractor import (
 options = {"debug": True, "run_id": "agreement-review-001"}
 conversion = convert_document("raw_documents/pdf/example.pdf", **options)
 chunks = build_chunks(conversion, **options)
-guesses = classify_chunks(chunks, **options)
-labels = reflect_topics(chunks, guesses, **options)  # Paid OpenCode calls.
+labels = reflect_topics(chunks, **options)  # Paid OpenCode calls.
 topic_map = build_topic_map(chunks, labels, **options)  # No LLM call.
 print(topic_map.topic_map_json_path)
 print(summarize_run(options["run_id"]))
 ```
 
-B3 produces one validated final topic list per chunk, with supporting Docling
-item IDs. It reviews all chunks in batches of up to five and 24,000 evidence
-characters; oversized atomic chunks stay intact. B4 builds an index from each
-approved topic to classified chunks and their cited source items. Neither step
-creates summaries, invents categories, or implements field extraction.
+B1 remains required. `reflect_topics(chunks, *, ...)` consumes only source chunks;
+heuristic classification, signals inputs and `use_b2` have been removed.
+Current profiles/results declare `pipeline_layout="stage-b-v2"`, which separates
+new checkpoints from historical classification runs.
 
-Matching validated B3 batch checkpoints resume without repeating paid calls.
+B2 produces one validated final topic list per target chunk, with coherent
+passage groups separating `evidence_item_ids` from `context_item_ids`. It reads
+the full core chunk, heading paths and one neighboring atomic group on each
+side (`boundary_context_groups=1`, or a nonnegative integer override). Every
+group requires direct evidence in its core chunk; other targets sharing a batch
+do not expand its citation scope. It reviews all chunks in batches of up to five
+and 24,000 serialized packet characters; oversized packets stay intact and run
+alone. B3 indexes approved topics to these same groups, deduplicating exact
+identities only. Neither step summarizes, ranks relevance, invents categories
+or implements field extraction. Source order, owners and evidence/context pages
+are verified deterministically, not invented by the model.
+
+Independent B2 batches run with `max_concurrency=5` by default. Set
+`reflect_topics(..., max_concurrency=1)` for sequential execution, or another
+positive integer to bound simultaneous calls. Each batch retains its own
+two-attempt limit. Final classifications stay in source order. On failure,
+scheduling stops; already running successful calls can finish and checkpoint,
+but no partial final artifact is written. Changing concurrency reuses matching
+checkpoints. Injected clients must support concurrent `complete()` calls when
+the limit is greater than one. Debug exchanges carry unique attempt IDs and
+sanitized `_trace` metadata. Saved review pairs B2 requests/responses by attempt
+identity and C inputs/outputs by span, not arrival order.
+Live concurrency/rate-limit performance has not yet been measured.
+
+Matching validated B2 batch checkpoints resume without repeating paid calls.
 Input/settings/prompt or shared topic-definition changes invalidate reuse;
-`force=True` bypasses it. B3 uses `b3-reflection-v2` with explicit topic meanings
-and boundaries maintained in `topic_taxonomy.py`; B2 phrase rules are unchanged.
-The current snapshot has 156 passing tests. Existing saved-run HTML reflects
-the original v1 model calls, not a v2 rerun or measured accuracy improvement.
+`force=True` bypasses it. B2 uses `b2-passage-classification-v1` with explicit topic meanings
+and boundaries maintained in `topic_taxonomy.py`.
+The original saved-run HTML retains v1 model calls. A separate completed
+GPT-6-Luna/medium review uses the historical v2 prompt with schema-v1 citations,
+two-chunk batches and sequential calls;
+neither is a measured accuracy benchmark or a live concurrency test.
 `reflect_topics(..., model="gpt-5.6-luna", reasoning_effort="low")` overrides
 defaults for experiments. Unknown model IDs require an explicit supported
 `api_style`; unexpected returned-model substitutions fail rather than hiding them.
 
-Artifacts beside B1 are `document.topic-classifications.json` and
-`document.topic-map.json`. Source corpus files remain untouched.
+New classification/map artifacts are `document.topic-passages.json` and
+`document.topic-passage-map.json` under `tmp/stage_b/<source-sha256>/stage-b-v2/`;
+explicit A10 opt-out uses `<source-sha256>/a10-disabled/stage-b-v2/`.
+B1 keeps its original parent directory. Old schema-v1 files and checkpoints remain
+untouched; B3 and the reviewer retain explicit legacy support without inventing
+evidence/context roles. Packet hashes, boundary policy and schema version join
+the existing input/prompt/definition/model hashes in checkpoint identity.
+
+The shared canonical paragraph/table resolver is deferred. Core tables still
+reach B2 through B1's joined rendering. If a selected neighboring table lacks
+item-level text, processing raises a clear error before any model call; it does
+not silently omit the table or include an unrelated whole page. Revisit the
+hash-verified Stage A input contract in the build backlog. Source corpus files
+remain untouched.
+
+The passage refinement has **228 passing regression tests**, independent code
+review and browser checks on a clearly labeled synthetic development fixture.
+These verify the build contract, not legal classification accuracy. No paid
+schema-v2 passage rerun or corpus accuracy benchmark has been performed yet.
 
 ### Local traces and debug mode
 
@@ -201,22 +239,29 @@ Keys and authorization headers are excluded; hidden model reasoning is not saved
 `summarize_run()` groups requests/retries, failures, known token usage, latency
 and known/unknown costs by model, stage and document. Luna estimates use a dated
 OpenCode rate snapshot; unknown models or unsupported pricing tiers stay unknown.
+For high-effort calls, `OpenCodeClient(timeout_seconds=300)` can extend the
+transport timeout beyond its 60-second default without changing B2 checkpoint
+identity. A timed-out request has unknown provider cost, not zero cost.
+For Responses/Chat, `max_output_tokens=32768` can increase the total reasoning
+and visible-output allowance beyond the 8,192 default. Higher allowances can
+increase actual token spend; record the effective limit in experiment metadata.
+
 Supply a `pricing` mapping to `OpenCodeClient` for custom dated rates, or `{}` to
 disable estimates. Estimated costs are not provider bills, and retries count.
 Phoenix is deferred: there is no observability server to start.
 
 The live acceptance check used a tiny synthetic excerpt, not a corpus accuracy
 evaluation. Responses/Luna/high returned the requested model and reasoning;
-Chat Completions has fake-HTTP coverage but no live open-model trial yet.
+Tiny live checks now also pass for DeepSeek V4/V4.1 Flash/high and Qwen3.8
+Flash/high. Messages supports `none` and budget-style `high` (16,000 thinking
+tokens, 32,768 total output cap); other Messages tiers are rejected, not silently
+mapped. Responses/Chat now forward `xhigh` unchanged. GPT-5.6 Luna/xhigh and
+GPT-6 Luna/high tiny requests passed. Hidden thinking is excluded from debug
+response snapshots while token usage remains available for cost estimates.
+Workspace prices are saved in `evaluations/pricing/opencode-workspace-2026-10-01.json`.
+Access checks are not document-classification benchmarks.
 Unmatched chunks remain included. Classification accuracy awaits reviewed
 ground truth; the current corpus checks verify coverage and provenance.
-
-```python
-from credit_agreement_extractor import classify_chunks
-
-topics = classify_chunks(chunks)
-print(topics.topic_signals_json_path)
-```
 
 ## Party-extraction scaffold API
 
@@ -252,11 +297,18 @@ verified page and source evidence.
 ## Review a saved pipeline run
 
 The read-only HTML reviewer joins logged artifacts to original source text,
-pages, heading context and tables. Its stage selector exposes Stage A's four
-conversion artifacts, B1 chunks, B2 guesses/rule matches, B3 final labels/model
-attempts, B4 topic-map memberships, and Stage C transport snapshots. Pending
+pages, heading context and tables. Its stage selector exposes Stage A's available
+conversion artifacts, B1 chunks, B2 final labels/model
+attempts, B3 topic-map memberships, and Stage C transport snapshots. Pending
 retrieval/extraction stages show no fabricated outputs. Click a citation to
 focus its source passage; review unclassified chunks for possible omissions.
+Schema-v2 B2/B3 show passage groups by default: direct evidence is prominent,
+supporting context and full source chunks are separately expandable, and source
+heading paths/pages remain visible. Current runs have no heuristic suggestions.
+Historical unmarked runs retain old stage labels: B2 heuristics (or skipped),
+B3 LLM classification and B4 map. New `stage-b-v2` maps old B3 → B2, old B4 → B3,
+old pending B5 → B4 and old pending B6 → B5; old heuristic B2 has no current step.
+Saved history and schema-v1 citation roles are preserved.
 
 ```bash
 uv run --no-sync python -m credit_agreement_extractor.review \
@@ -269,6 +321,43 @@ Source text is the converter's wording, not a new transcription of the PDF;
 Stage A substeps were not separately traced in this run. No live job-launch UI
 or reviewer-label persistence is included. Runs need `debug=True` to capture
 the content needed for inspection.
+
+## Human topic annotation
+
+Start the separate golden-set annotation page:
+
+```bash
+uv run --no-sync python -m credit_agreement_extractor.annotation --port 60901
+```
+
+Open `http://localhost:60901/`. The original PDF page (rendered using installed
+Poppler) or sandboxed source HTML is on the left. The current canonical passage,
+table, pages and optional JSON are on the right, above multi-select topic labels.
+Save or Save & next persists human decisions to disk; arrows move between
+passages and continue to the next approved document. Definitions appear on hover.
+The reading view highlights the current passage within its page context.
+
+The eight approved sources are ordered in `evaluations/golden_documents.json`.
+Missing conversions are prepared locally on selection with `use_hierarchy=True`
+to keep existing source catalogs stable; no model calls are made.
+Labels are under ignored `evaluations/ground_truth/`, separate from pipeline
+artifacts. The model pipeline never reads this store. Tests verify identical B2
+evidence before and after saving human labels, and reject a human-label file as
+a pipeline input. Export downloads the current document's annotation JSON.
+Unreviewed passages and reviewed passages with no topics remain distinct.
+
+Taxonomy v2 adds **Contract definitions**, covering explicit contractual
+definitions (not mere use of a defined term), alongside any substantive labels.
+Previously saved labels and notes are preserved. Old reviews remain completed;
+adding a topic never resets progress or requires re-review. The
+`reviewed_topics` field records which categories were actually reviewed;
+absence of a newly added category is unknown, not a negative label.
+Old open tabs must reload before saving; copy unsaved notes before refreshing.
+Two verified backups of the 163 pre-update saved records are retained under
+`tmp/runs/definitions-backup-20261001/{primary,redundant}/`.
+
+The annotation checkpoint had 184 passing tests. Browser save/reload checks used a disposable
+store; no test labels were written into the real human reference set.
 
 ## Run the tests
 
@@ -285,7 +374,7 @@ docs/                            # architecture, plans, and corpus audits
 raw_documents/pdf/               # immutable source PDFs
 raw_documents/htm/               # immutable source HTML/HTM files
 tmp/converted/                    # ignored generated conversion artifacts
-tmp/stage_b/                      # ignored B1–B4 artifacts and B3 checkpoints
+tmp/stage_b/                      # ignored B1–B3 artifacts and B2 checkpoints
 tmp/runs/                         # ignored local telemetry and debug snapshots
 ```
 

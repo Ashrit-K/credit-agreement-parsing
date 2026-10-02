@@ -19,8 +19,11 @@ tmp/converted/
 tmp/stage_b/
 tmp/runs/
 tmp/b3-smoke/
+evaluations/ground_truth/
 archive/*.bundle
 :memory:.ses
 tmp/hierarchy_experiment.py
 tmp/hierarchy_experiment_output/
 tmp/pdfs/
+tmp/passage-development/
+tmp/scripts/check_passage_review.py

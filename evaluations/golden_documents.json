@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "documents": [
+    {"id": "011", "path": "raw_documents/pdf/011_credit_agreement.pdf"},
+    {"id": "002", "path": "raw_documents/pdf/002_Facility_Agreement.pdf"},
+    {"id": "003", "path": "raw_documents/pdf/003_first-lien-bridge-credit-agreement.pdf"},
+    {"id": "008", "path": "raw_documents/pdf/008_BAA_Redacted_Facility_Agreement.pdf"},
+    {"id": "012", "path": "raw_documents/pdf/012_tmb-20250627xex10d1.pdf"},
+    {"id": "010", "path": "raw_documents/pdf/010_KYN-Term-Loan-Agreement-Dated-8.6.21.pdf"},
+    {"id": "057", "path": "raw_documents/pdf/057_Radio_One_2015_Credit_Agreement_8-K.pdf"},
+    {"id": "067", "path": "raw_documents/htm/067_RxSight_Oxford_2023_Loan_and_Security_Agreement.htm"}
+  ]
+}

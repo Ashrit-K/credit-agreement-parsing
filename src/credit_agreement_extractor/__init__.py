@@ -8,7 +8,7 @@ from .conversion import (
     convert_document,
 )
 from .hierarchy import InvalidHierarchyInputError
-from .topic_signals import InvalidTopicInputError, TopicSignalsArtifact, classify_chunks
+from .chunk_validation import InvalidTopicInputError
 from .topic_reflection import TopicClassificationArtifact, reflect_topics
 from .topic_map import TopicMapArtifact, build_topic_map
 from .llm import OpenCodeClient, LlmResponse, LlmError
@@ -27,6 +27,4 @@ __all__ = [
     "build_chunks",
     "extract_parties",
     "InvalidTopicInputError",
-    "TopicSignalsArtifact",
-    "classify_chunks",
 ]

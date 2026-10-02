@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from .tracing import traced
+from .hierarchy import _walk_body_refs, _canonical_pages, InvalidHierarchyInputError
 
 
 class InvalidChunkInputError(ValueError):
@@ -64,8 +65,35 @@ def _is_sequence(value: object) -> bool:
     )
 
 
-def _chunking_profile(target_characters: int) -> str:
-    return f"{_CHUNKING_PROFILE}-chars-{target_characters}"
+def _chunking_profile(target_characters: int, use_hierarchy: bool = True) -> str:
+    profile = f"{_CHUNKING_PROFILE}-chars-{target_characters}"
+    return profile if use_hierarchy else profile + "-a10-disabled-v1"
+
+
+def _canonical_source_metadata(index: Mapping[str, Mapping[str, Any]]) -> tuple[list[str], dict]:
+    """Read source provenance without running A10's heading reconstruction.
+
+    Reuse the safe canonical-reference walker, not the hierarchy builder. This
+    is transient B1 metadata: no replacement hierarchy sidecar is persisted.
+    Actual heading items stay in reading order like every other source leaf.
+    """
+    reading_order, metadata, seen = [], {}, set()
+    try:
+        for entry in _walk_body_refs(index):
+            if entry.item_id == '#/body' or entry.item_id in seen:
+                raise InvalidChunkInputError('Canonical traversal repeats a source reference.')
+            seen.add(entry.item_id)
+            metadata[entry.item_id] = {
+                'parent_id': entry.parent_id,
+                'container_path': list(entry.container_path),
+                'pages': _canonical_pages(entry.item),
+                'heading_path': [],
+            }
+            if not entry.is_container:
+                reading_order.append(entry.item_id)
+    except InvalidHierarchyInputError as error:
+        raise InvalidChunkInputError(str(error)) from error
+    return reading_order, metadata
 
 
 def _sha256_file(path: Path) -> str:
@@ -513,11 +541,11 @@ def _chunk_record(
 
 def build_chunk_document(
     canonical: Mapping[str, Any],
-    hierarchy: Mapping[str, Any],
+    hierarchy: Mapping[str, Any] | None = None,
     *,
     source_sha256: str,
     docling_json_sha256: str,
-    hierarchy_json_sha256: str,
+    hierarchy_json_sha256: str | None = None,
     target_characters: int = _DEFAULT_TARGET_CHARACTERS,
 ) -> dict[str, Any]:
     """Return schema-versioned B1 chunks without filesystem access."""
@@ -525,12 +553,15 @@ def build_chunk_document(
         raise InvalidChunkInputError("Target characters must be positive.")
     index = _index_canonical_items(canonical)
     _validate_group_references(index)
-    reading_order = _validated_reading_order(
-        hierarchy,
-        source_sha256=source_sha256,
-        index=index,
-    )
-    hierarchy_items = hierarchy["items"]
+    use_hierarchy = hierarchy is not None
+    if use_hierarchy != (hierarchy_json_sha256 is not None):
+        raise InvalidChunkInputError('Hierarchy data and its hash must both be present or both absent.')
+    if use_hierarchy:
+        reading_order = _validated_reading_order(
+            hierarchy, source_sha256=source_sha256, index=index)
+        hierarchy_items = hierarchy["items"]
+    else:
+        reading_order, hierarchy_items = _canonical_source_metadata(index)
 
     units = _build_atomic_units(
         reading_order,
@@ -567,8 +598,9 @@ def build_chunk_document(
         "schema_version": _CHUNK_SCHEMA_VERSION,
         "status": "completed",
         "source_sha256": source_sha256,
-        "chunking_profile": _chunking_profile(target_characters),
+        "chunking_profile": _chunking_profile(target_characters, use_hierarchy),
         "inputs": {
+            "use_hierarchy": use_hierarchy,
             "docling_json_sha256": docling_json_sha256,
             "hierarchy_json_sha256": hierarchy_json_sha256,
         },
@@ -598,7 +630,7 @@ def _is_complete_chunk_data(
     *,
     source_sha256: str,
     docling_json_sha256: str,
-    hierarchy_json_sha256: str,
+    hierarchy_json_sha256: str | None,
     chunking_profile: str,
 ) -> bool:
     inputs = value.get("inputs")
@@ -644,6 +676,7 @@ def _is_complete_chunk_data(
         and value.get("chunking_profile") == chunking_profile
         and inputs.get("docling_json_sha256") == docling_json_sha256
         and inputs.get("hierarchy_json_sha256") == hierarchy_json_sha256
+        and inputs.get("use_hierarchy", True) is (hierarchy_json_sha256 is not None)
         and flattened == list(reading_order)
         and len(flattened) == len(set(flattened))
     )
@@ -655,8 +688,11 @@ def _artifact_paths(
     output_root: Path,
     chunking_profile: str,
     cached: bool,
+    use_hierarchy: bool = True,
 ) -> ChunkArtifact:
     output_directory = output_root / source_sha256
+    if not use_hierarchy:
+        output_directory = output_directory / 'a10-disabled'
     return ChunkArtifact(
         source_sha256=source_sha256,
         output_directory=output_directory,
@@ -681,37 +717,56 @@ def build_chunks(
     if target_characters <= 0:
         raise InvalidChunkInputError("Target characters must be positive.")
 
-    required_paths = (
+    use_hierarchy = conversion_artifact.hierarchy_json_path is not None
+    required_paths = [
         conversion_artifact.markdown_path,
         conversion_artifact.docling_json_path,
-        conversion_artifact.hierarchy_json_path,
         conversion_artifact.manifest_path,
-    )
+    ]
+    if use_hierarchy:
+        required_paths.append(conversion_artifact.hierarchy_json_path)
     if not all(isinstance(path, Path) and path.is_file() for path in required_paths):
         raise InvalidChunkInputError(
-            "B1 requires a completed Stage A artifact with all four files."
+            "B1 requires a completed Stage A artifact with all mode-required files."
         )
     manifest = _load_json_mapping(
         conversion_artifact.manifest_path,
         description="Stage A manifest",
     )
+    source = manifest.get("source", {})
     if (
         manifest.get("status") != "completed"
-        or manifest.get("source", {}).get("sha256")
+        or not isinstance(source, Mapping)
+        or source.get("sha256")
         != conversion_artifact.source_sha256
     ):
         raise InvalidChunkInputError(
             "B1 requires a completed Stage A manifest for the same source."
         )
 
+    # Only an intentional, recorded A10 bypass authorizes absent hierarchy.
+    # Missing/corrupt enabled hierarchy must never silently become flat mode.
+    recorded = manifest.get('hierarchy_sidecar', {})
+    artifacts = manifest.get('artifacts', {})
+    if not isinstance(recorded, Mapping) or not isinstance(artifacts, Mapping):
+        raise InvalidChunkInputError('Stage A hierarchy declaration is malformed.')
+    if use_hierarchy:
+        if (recorded.get('enabled', True) is not True
+            or artifacts.get('hierarchy_json') != conversion_artifact.hierarchy_json_path.name):
+            raise InvalidChunkInputError('Stage A hierarchy declaration conflicts with its artifact.')
+    elif (recorded.get('enabled') is not False or recorded.get('status') != 'disabled'
+          or 'hierarchy_json' not in artifacts or artifacts['hierarchy_json'] is not None):
+        raise InvalidChunkInputError('B1 requires an explicitly disabled A10 manifest for flat mode.')
+
     docling_json_sha256 = _sha256_file(conversion_artifact.docling_json_path)
-    hierarchy_json_sha256 = _sha256_file(conversion_artifact.hierarchy_json_path)
-    profile = _chunking_profile(target_characters)
+    hierarchy_json_sha256 = _sha256_file(conversion_artifact.hierarchy_json_path) if use_hierarchy else None
+    profile = _chunking_profile(target_characters, use_hierarchy)
     artifact = _artifact_paths(
         source_sha256=conversion_artifact.source_sha256,
         output_root=Path(output_root).expanduser(),
         chunking_profile=profile,
         cached=False,
+        use_hierarchy=use_hierarchy,
     )
 
     if artifact.chunks_json_path.is_file():
@@ -750,7 +805,7 @@ def build_chunks(
         hierarchy = _load_json_mapping(
             conversion_artifact.hierarchy_json_path,
             description="Hierarchy sidecar",
-        )
+        ) if use_hierarchy else None
         document = build_chunk_document(
             canonical,
             hierarchy,
