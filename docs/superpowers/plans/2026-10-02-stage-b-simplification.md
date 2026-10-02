@@ -59,7 +59,7 @@ Files: `AGENTS.md`, `README.md`, `docs/conversion_pipeline.md`, `docs/build_back
 - [x] Document A10-on default, chunks-only API, new IDs and explicit historical mapping; reported 011 evals motivate choice but do not prove universal improvement.
 - [x] Run full `uv run --no-sync python -m pytest -q`, `git diff --check`, independent scoped review and a tiny offline through-map test. Record actual test counts; no paid calls.
 - [x] Update Obsidian project/daily checkpoint without modifying labels or linked historical findings.
-- [ ] Resolve commit scope from `git status` and dependencies; scan staged blobs for secrets, generated traces and prohibited labels. Inspect tracked `.env`/ignored files and diff stat. Commit on main with a concise conventional message, then `git push origin main` and verify local/remote commit identity. Report any preexisting changes intentionally left unstaged.
+- [x] Resolve commit scope from `git status` and dependencies; scan staged blobs for secrets, generated traces and prohibited labels. Inspect tracked `.env`/ignored files and diff stat. Commit on main with a concise conventional message, then `git push origin main` and verify local/remote commit identity. Report any preexisting changes intentionally left unstaged.
 
 ## Acceptance
 
@@ -69,6 +69,11 @@ Implementation verified on main, 2026-10-02: 271 delivery-scope tests passed
 review finding fixed and re-reviewed with no unresolved defects. JavaScript
 syntax and disposable DOM execution passed; real-browser local-file navigation
 was rejected, so visual inspection remains unverified. No paid calls or source/
-human-label mutation. Delivery will record verified push below.
+human-label mutation. Implementation committed on main as `6c70420`; push to
+origin/main succeeded and `git ls-remote` verified the full matching commit.
+42 staged nondeleted files were scanned against configured credential values,
+key patterns and excluded data paths with no findings. Credentials, ground
+truth, generated runs, corpus staging and standalone experimental files were
+not staged. This final documentation checkpoint records that delivery.
 
 Default conversion produces A10 hierarchy. Current public API cannot enable heuristics and classification works directly from B1 through the topic map. New traces are B2/B3 with explicit layout identity; old files are readable under their original B3/B4 meanings. Model outputs and evidence/context validation remain unchanged. All affected tests and full suite pass, docs reflect current layout, and only secret-screened reviewed changes are committed/pushed.
