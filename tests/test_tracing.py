@@ -49,8 +49,8 @@ def test_debug_saves_artifact_contents(tmp_path):
 
 def test_all_public_pipeline_wrappers_accept_debug_parameters():
     import inspect
-    from credit_agreement_extractor import convert_document,build_chunks,classify_chunks,reflect_topics,build_topic_map,extract_parties
-    for function in (convert_document,build_chunks,classify_chunks,reflect_topics,build_topic_map,extract_parties):
+    from credit_agreement_extractor import convert_document,build_chunks,reflect_topics,build_topic_map,extract_parties
+    for function in (convert_document,build_chunks,reflect_topics,build_topic_map,extract_parties):
         assert {'debug','run_id','trace_root'} <= set(inspect.signature(function).parameters)
 
 
@@ -90,3 +90,53 @@ def test_summary_counts_failed_response_without_counting_request_twice(tmp_path)
     result=summarize_run('failure',trace_root=tmp_path)
     assert result['request_count']==1 and result['failed_requests']==1
     assert result['unknown_usage_requests']==1
+
+
+def test_simultaneous_c_snapshots_keep_context_and_redact_secrets(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from contextvars import copy_context
+    from threading import Barrier
+    from credit_agreement_extractor.llm import LlmResponse
+
+    barrier = Barrier(2)
+
+    @traced('C')
+    def complete():
+        trace = current_trace()
+        trace.snapshot('C-request', {'payload': 'source', 'api_key': 'private-value'})
+        barrier.wait(timeout=5)
+        trace.snapshot('C-response', {'text': 'answer'})
+        return LlmResponse('answer', 'gpt-5.6-luna', 'responses', {}, 0, {'kind': 'unknown'})
+
+    def worker(index):
+        with current_trace().bind(batch_id=f'batch-{index}', attempt=index+1,
+                                  attempt_id=f'attempt-{index}', source_sha256='a'*64,
+                                  authorization='private-value'):
+            return complete()
+
+    @traced('B3')
+    def operation(**kwargs):
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(copy_context().run, worker, index) for index in range(2)]
+            return [future.result() for future in futures]
+
+    operation(debug=True, run_id='snapshots', trace_root=tmp_path)
+    folder = tmp_path/'snapshots'
+    captured = [(p.name, json.loads(p.read_text())) for p in (folder/'debug').glob('C-*.json')]
+    assert len(captured)==8
+    assert 'private-value' not in ''.join(p.read_text() for p in folder.rglob('*.json*'))
+    identities = {}
+    for name, data in captured:
+        meta = data['_trace']
+        assert meta['run_id']=='snapshots' and meta['stage']=='C'
+        assert meta['source_sha256']=='a'*64
+        index = int(meta['batch_id'].split('-')[1])
+        assert meta['attempt']==index+1 and meta['attempt_id']==f'attempt-{index}'
+        assert 'authorization' not in meta
+        identities.setdefault(index, set()).add(meta['span_id'])
+        if name.startswith('C-output'):
+            assert data['model']=='gpt-5.6-luna' and data['text']=='answer'
+        if name.startswith('C-request'):
+            assert data['payload']=='source' and data['api_key']=='[REDACTED]'
+    assert all(len(spans)==1 for spans in identities.values())
+    assert identities[0] != identities[1]

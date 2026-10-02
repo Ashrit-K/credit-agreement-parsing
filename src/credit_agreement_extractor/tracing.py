@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import re
 from tempfile import NamedTemporaryFile
+from threading import Lock
 import time
 from uuid import uuid4
 from pydantic import BaseModel, SecretStr
@@ -17,6 +18,7 @@ _ACTIVE: ContextVar[RunTrace | None] = ContextVar('credit_run_trace', default=No
 _SPAN = ContextVar('credit_span', default=None)
 _CONTEXT = ContextVar('credit_trace_context', default={})
 _SECRET_FIELDS = {'apikey', 'authorization', 'headers', 'credential', 'credentials', 'token', 'secret', 'password'}
+_EVENT_WRITE_LOCK = Lock()
 
 
 def safe_data(value):
@@ -60,12 +62,24 @@ class RunTrace:
         # Append one compact metadata event; full text is never added implicitly.
         row = {'run_id':self.run_id, 'span_id':_SPAN.get(), 'event':name,
                'time_unix':time.time(), **safe_data(_CONTEXT.get()), **safe_data(data or {})}
-        with (self.directory / 'events.jsonl').open('a', encoding='utf-8') as stream:
-            stream.write(json.dumps(row, ensure_ascii=False) + '\n')
+        # Multiple copied contexts (or RunTrace instances sharing a run folder)
+        # may append concurrently. Keep each complete line and flush together.
+        with _EVENT_WRITE_LOCK:
+            with (self.directory / 'events.jsonl').open('a', encoding='utf-8') as stream:
+                stream.write(json.dumps(row, ensure_ascii=False) + '\n')
 
     def snapshot(self, name, data):
         if self.debug:
-            atomic_json(self.directory / 'debug' / f'{name}-{uuid4().hex}.json', safe_data(data))
+            captured = safe_data(data)
+            if isinstance(captured, dict):
+                context = _CONTEXT.get()
+                captured['_trace'] = safe_data({
+                    **{key: context[key] for key in
+                       ('stage', 'source_sha256', 'batch_id', 'attempt', 'attempt_id')
+                       if key in context},
+                    'run_id': self.run_id, 'span_id': _SPAN.get(),
+                })
+            atomic_json(self.directory / 'debug' / f'{name}-{uuid4().hex}.json', captured)
 
     @contextmanager
     def bind(self, **context):
@@ -157,6 +171,7 @@ def traced(stage):
             token = _ACTIVE.set(trace)
             parent_span = _SPAN.get()
             span = _SPAN.set(uuid4().hex)
+            context_token = _CONTEXT.set({**_CONTEXT.get(), 'stage': stage})
             started = time.monotonic()
             try:
                 trace.event('stage_started', {'stage':stage,'parent_span_id':parent_span})
@@ -177,5 +192,6 @@ def traced(stage):
             finally:
                 _ACTIVE.reset(token)
                 _SPAN.reset(span)
+                _CONTEXT.reset(context_token)
         return wrapper
     return decorate

@@ -64,7 +64,7 @@ class ConversionArtifact:
     output_directory: Path
     markdown_path: Path
     docling_json_path: Path
-    hierarchy_json_path: Path
+    hierarchy_json_path: Path | None
     manifest_path: Path
     cached: bool
 
@@ -79,6 +79,11 @@ _SUPPORTED_SUFFIXES = {
 # way that should invalidate earlier artifacts. The source hash alone only says
 # the input is identical; it does not say the conversion recipe is identical.
 _CONVERSION_PROFILE = "docling-json-v3-rapidocr-en-hierarchy-sidecar-v1"
+
+
+def _conversion_profile(use_hierarchy: bool) -> str:
+    """Preserve historical enabled caches; distinguish the A10 ablation."""
+    return _CONVERSION_PROFILE if use_hierarchy else _CONVERSION_PROFILE + "-a10-disabled-v1"
 
 
 def _validate_source_path(source_path: str | Path) -> tuple[Path, str]:
@@ -126,9 +131,13 @@ def _artifact_paths(
     source_format: str,
     output_root: Path,
     cached: bool,
+    use_hierarchy: bool = True,
 ) -> ConversionArtifact:
     """Build every path from one content fingerprint in a single place."""
     output_directory = output_root / source_sha256
+    # Never replace a historical enabled artifact when switching the toggle.
+    if not use_hierarchy:
+        output_directory = output_directory / "a10-disabled"
     return ConversionArtifact(
         source_path=source_path,
         source_sha256=source_sha256,
@@ -136,7 +145,7 @@ def _artifact_paths(
         output_directory=output_directory,
         markdown_path=output_directory / "document.md",
         docling_json_path=output_directory / "document.docling.json",
-        hierarchy_json_path=output_directory / "document.hierarchy.json",
+        hierarchy_json_path=output_directory / "document.hierarchy.json" if use_hierarchy else None,
         manifest_path=output_directory / "manifest.json",
         cached=cached,
     )
@@ -144,33 +153,46 @@ def _artifact_paths(
 
 def _is_complete_cache(artifact: ConversionArtifact) -> bool:
     """Accept a cache hit only when its files and recorded source agree."""
-    required_paths = (
+    use_hierarchy = artifact.hierarchy_json_path is not None
+    required_paths = [
         artifact.markdown_path,
         artifact.docling_json_path,
-        artifact.hierarchy_json_path,
         artifact.manifest_path,
-    )
+    ]
+    if use_hierarchy:
+        required_paths.append(artifact.hierarchy_json_path)
     if not all(path.is_file() for path in required_paths):
         return False
 
     try:
         manifest = json.loads(artifact.manifest_path.read_text(encoding="utf-8"))
-        sidecar = json.loads(
-            artifact.hierarchy_json_path.read_text(encoding="utf-8")
-        )
+        sidecar = json.loads(artifact.hierarchy_json_path.read_text(encoding="utf-8")) if use_hierarchy else None
     except (OSError, json.JSONDecodeError):
         return False
 
-    return (
+    if not isinstance(manifest, dict):
+        return False
+    recorded = manifest.get("hierarchy_sidecar", {})
+    artifacts = manifest.get("artifacts", {})
+    source = manifest.get("source", {})
+    if not all(isinstance(record, dict) for record in (recorded, artifacts, source)):
+        return False
+    common = (
         manifest.get("status") == "completed"
-        and manifest.get("source", {}).get("sha256") == artifact.source_sha256
-        and manifest.get("conversion_profile") == _CONVERSION_PROFILE
-        and manifest.get("artifacts", {}).get("hierarchy_json")
-        == artifact.hierarchy_json_path.name
-        and manifest.get("hierarchy_sidecar", {}).get("schema_version") == 1
-        and sidecar.get("schema_version") == 1
-        and sidecar.get("source_sha256") == artifact.source_sha256
+        and source.get("sha256") == artifact.source_sha256
+        and manifest.get("conversion_profile") == _conversion_profile(use_hierarchy)
+        and artifacts.get("markdown") == artifact.markdown_path.name
+        and artifacts.get("docling_json") == artifact.docling_json_path.name
     )
+    if not use_hierarchy:
+        return (common and recorded.get("enabled") is False
+                and recorded.get("status") == "disabled"
+                and "hierarchy_json" in artifacts and artifacts["hierarchy_json"] is None)
+    return (common and recorded.get("enabled", True) is True
+            and artifacts.get("hierarchy_json") == artifact.hierarchy_json_path.name
+            and recorded.get("schema_version") == 1 and isinstance(sidecar, dict)
+            and sidecar.get("schema_version") == 1
+            and sidecar.get("source_sha256") == artifact.source_sha256)
 
 
 def _default_converter() -> DocumentConverterLike:
@@ -241,6 +263,7 @@ def convert_document(
     source_path: str | Path,
     output_root: str | Path = Path("tmp/converted"),
     *,
+    use_hierarchy: bool = True,
     converter: DocumentConverterLike | None = None,
     debug: bool = False,
     run_id: str | None = None,
@@ -249,9 +272,14 @@ def convert_document(
     """Convert one PDF/HTML source and persist canonical and readable artifacts.
 
     A SHA-256 fingerprint identifies the source content. Repeating a conversion
-    with identical bytes reuses a complete artifact directory, even if the
-    caller used a different filename for the same source.
+    with identical bytes and settings reuses a complete artifact directory,
+    even if the caller used a different filename for the same source. A10 is
+    enabled by default, requiring four artifacts including the hierarchy sidecar.
+    Set use_hierarchy=False for three artifacts and a None hierarchy path.
+    Separate mode directories prevent an ablation from replacing old results.
     """
+    if type(use_hierarchy) is not bool:
+        raise ValueError("use_hierarchy must be a boolean.")
     path, source_format = _validate_source_path(source_path)
     source_sha256 = _sha256(path)
     root = Path(output_root).expanduser()
@@ -261,6 +289,7 @@ def convert_document(
         source_format=source_format,
         output_root=root,
         cached=False,
+        use_hierarchy=use_hierarchy,
     )
 
     if _is_complete_cache(artifact):
@@ -286,24 +315,26 @@ def convert_document(
         json.dumps(canonical, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
-    hierarchy = build_hierarchy_sidecar(
-        canonical,
-        source_sha256=source_sha256,
-    )
-    artifact.hierarchy_json_path.write_text(
-        json.dumps(hierarchy, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-
-    warning_codes = list(
-        dict.fromkeys(warning["code"] for warning in hierarchy["warnings"])
-    )
+    # Genuine A10 bypass: no sidecar builder, heading stack or warning pass.
+    hierarchy = None
+    if use_hierarchy:
+        hierarchy = build_hierarchy_sidecar(canonical, source_sha256=source_sha256)
+        artifact.hierarchy_json_path.write_text(
+            json.dumps(hierarchy, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    sidecar_metadata = {"enabled": False, "status": "disabled"}
+    if hierarchy is not None:
+        sidecar_metadata = {
+            "enabled": True,
+            "schema_version": hierarchy["schema_version"],
+            "warning_count": len(hierarchy["warnings"]),
+            "warning_codes": list(dict.fromkeys(w["code"] for w in hierarchy["warnings"])),
+        }
 
     # A11 is the completion boundary: this manifest is written only after all
-    # three document artifacts exist and the hierarchy mapping has validated.
+    # required document artifacts exist; enabled hierarchy must also validate.
     manifest = {
         "schema_version": 1,
-        "conversion_profile": _CONVERSION_PROFILE,
+        "conversion_profile": _conversion_profile(use_hierarchy),
         "status": "completed",
         "converted_at": datetime.now(UTC).isoformat(),
         "source": {
@@ -332,15 +363,11 @@ def convert_document(
             "generate_parsed_pages": source_format == "pdf",
         },
         "gzip_normalized": gzip_normalized,
-        "hierarchy_sidecar": {
-            "schema_version": hierarchy["schema_version"],
-            "warning_count": len(hierarchy["warnings"]),
-            "warning_codes": warning_codes,
-        },
+        "hierarchy_sidecar": sidecar_metadata,
         "artifacts": {
             "markdown": artifact.markdown_path.name,
             "docling_json": artifact.docling_json_path.name,
-            "hierarchy_json": artifact.hierarchy_json_path.name,
+            "hierarchy_json": artifact.hierarchy_json_path.name if use_hierarchy else None,
         },
     }
     artifact.manifest_path.write_text(

@@ -106,7 +106,7 @@ def test_pdf_conversion_persists_canonical_and_derived_artifacts(
     output_root = tmp_path / "converted"
     converter = RecordingConverter()
 
-    artifact = convert_document(source_path, output_root, converter=converter)
+    artifact = convert_document(source_path, output_root, use_hierarchy=True, converter=converter)
 
     assert converter.received_paths == [source_path]
     assert artifact.output_directory == output_root / artifact.source_sha256
@@ -146,6 +146,7 @@ def test_pdf_conversion_persists_canonical_and_derived_artifacts(
         "hierarchy_json": "document.hierarchy.json",
     }
     assert manifest["hierarchy_sidecar"] == {
+        "enabled": True,
         "schema_version": 1,
         "warning_count": 0,
         "warning_codes": [],
@@ -178,7 +179,7 @@ def test_matching_complete_artifact_directory_is_reused(tmp_path: Path) -> None:
     source_path.write_text("<html><body>Agreement</body></html>", encoding="utf-8")
     output_root = tmp_path / "converted"
 
-    first = convert_document(source_path, output_root, converter=RecordingConverter())
+    first = convert_document(source_path, output_root, use_hierarchy=True, converter=RecordingConverter())
     modification_times = {
         path: path.stat().st_mtime_ns
         for path in (
@@ -189,7 +190,7 @@ def test_matching_complete_artifact_directory_is_reused(tmp_path: Path) -> None:
         )
     }
 
-    second = convert_document(source_path, output_root, converter=FailingConverter())
+    second = convert_document(source_path, output_root, use_hierarchy=True, converter=FailingConverter())
 
     assert second.cached is True
     assert second.source_sha256 == first.source_sha256
@@ -245,13 +246,14 @@ def test_invalid_hierarchy_sidecar_invalidates_cache(
     source_path = tmp_path / "agreement.pdf"
     source_path.write_bytes(b"%PDF-1.4\nexample\n%%EOF\n")
     output_root = tmp_path / "converted"
-    first = convert_document(source_path, output_root, converter=RecordingConverter())
+    first = convert_document(source_path, output_root, use_hierarchy=True, converter=RecordingConverter())
     tamper(first.hierarchy_json_path)
     replacement_converter = RecordingConverter()
 
     second = convert_document(
         source_path,
         output_root,
+        use_hierarchy=True,
         converter=replacement_converter,
     )
 
@@ -266,7 +268,7 @@ def test_hierarchy_failure_removes_stale_completed_manifest(
     source_path = tmp_path / "agreement.pdf"
     source_path.write_bytes(b"%PDF-1.4\nexample\n%%EOF\n")
     output_root = tmp_path / "converted"
-    first = convert_document(source_path, output_root, converter=RecordingConverter())
+    first = convert_document(source_path, output_root, use_hierarchy=True, converter=RecordingConverter())
     first.hierarchy_json_path.unlink()
 
     def fail_hierarchy(
@@ -284,6 +286,7 @@ def test_hierarchy_failure_removes_stale_completed_manifest(
         convert_document(
             source_path,
             output_root,
+            use_hierarchy=True,
             converter=RecordingConverter(),
         )
 
