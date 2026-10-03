@@ -149,12 +149,26 @@ diagnostics. Never capture keys, authorization headers, or hidden reasoning.
 `summarize_run()` provides local analytics. Estimates use dated gateway rates;
 unknown costs remain unknown. Phoenix is deferred, not a build dependency.
 
-Planned Stage D is abstract downstream extraction. The downstream component
-resolves its information need into approved taxonomy IDs, requests B4/B5 source
-evidence, extracts requested structured data and validates source citations.
-Do not freeze sleeve topology, field schemas or an extra topic-resolver LLM.
-Keep uncertainty and verified item citations; additional evidence requests use
-approved topic IDs. The old pending detailed D diagram is superseded by D1.
+Stage D's initial fixed Python orchestrator is implemented through
+`extract_credit_terms(topic_map, chunks, *, conversion=None, ...)`. Only this
+entry accepts D jobs and returns document JSON. One bounded specialist covers
+parties, facility amounts and interest/fees, calling shared B4/B5 retrieval and C
+transport. No additional orchestration/resolver LLM or autonomous loop. Defaults
+follow Stage C; model/effort/API-style overrides remain available. Parent-child
+links are separate from agreement roles; role casing/spacing is normalized.
+Preserve IDs, numeric fraction rates, stated rate periods, explicit unknowns and
+source citations. Typed Decimal calculations never execute free-text formulas.
+Validate every numeric total, citation and entity/facility reference; missing
+amounts cannot allow uncited facilities. Maximum two attempts; authentication,
+configuration and model/style substitutions fail without silent fallback.
+`run_pipeline(path, ...)` chains A/B1/B2/B3 and directly triggers D after B3
+success, with a `topic_map_ready` event. Standalone B3 never initiates extraction.
+Persist unique execution results under `tmp/stage_d/<source-sha256>/` and write
+the provenance manifest last; never overwrite successful historical runs.
+D1 orchestration, D2 specialist, D3 validation and D4 completion have basic/debug
+traces, original evidence/context, source lookup and sanitized retry diagnostics.
+The saved HTML reviewer has not gained a Stage D view. Human extraction evals,
+new specialists and unbounded evidence broadening remain later work.
 
 ## Source Documents
 

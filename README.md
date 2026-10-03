@@ -5,9 +5,10 @@ evidence-backed JSON. The target output covers parties, interest terms,
 maturity and extension provisions, covenants, repayment terms, call protection,
 and other material agreement terms.
 
-The project is under active development. Document conversion and page-first
-evidence chunking, LLM topic classification, and topic mapping are operational;
-substantive legal-term extraction is still planned. The current
+The project is under active development. Conversion, page-first chunks, topic
+classification/mapping, retrieval and initial Stage D extraction are operational.
+Stage D covers parties, facility amounts and interest/fees; legal accuracy still
+requires human-reviewed extraction evaluations. The legacy
 `extract_parties()` function intentionally returns `not_implemented` rather
 than inventing borrower or lender data.
 
@@ -27,12 +28,65 @@ than inventing borrower or lender data.
 | Evidence retrieval and bundle assembly | Implemented (`B4`, `B5`) |
 | Shared OpenCode LLM interface | Implemented and tested (`Stage C`; Responses, Chat and Qwen Messages tiny-live checked) |
 | Local telemetry and opt-in detailed debug capture | Implemented; Phoenix deferred |
-| Downstream extraction of requested data | Planned (`Stage D`, abstract) |
+| Parties, facility amounts and interest/fees | Implemented (`D1–D4`); source-cited JSON, bounded specialist and validation |
 
 The authoritative numbered architecture, Mermaid diagram, and implementation
 status live in [`docs/conversion_pipeline.md`](docs/conversion_pipeline.md).
 Agreed but unfinished work is tracked in
 [`docs/build_backlog.md`](docs/build_backlog.md).
+
+## Extract credit terms
+
+```python
+from credit_agreement_extractor import run_pipeline
+
+result = run_pipeline(
+    "raw_documents/pdf/011_credit_agreement.pdf",
+    model="gpt-5.6-luna",               # Extraction model; call-time override
+    reasoning_effort="medium",
+    debug=True,
+    run_id="credit-terms-review",
+)
+print(result)
+```
+
+The runner chains A → B1 → B2 → B3 and directly starts the Stage D orchestrator
+after the completed topic map returns. B2 retains its own default unless
+`classification_model` is supplied. Standalone B3 never starts a hidden paid call.
+For a saved map, skip conversion/classification:
+
+```python
+from credit_agreement_extractor import extract_credit_terms
+
+result = extract_credit_terms(
+    topic_map, chunks, conversion=conversion,
+    model="gpt-5.6-luna", reasoning_effort="medium", debug=True,
+    run_id="saved-map-extraction",
+)
+```
+
+These inputs are the existing artifact handles returned by `build_topic_map`,
+`build_chunks` and `convert_document`. B4/B5 verify their source bindings;
+canonical Stage A JSON is required for selected tables. One specialist requests
+approved topics and makes a combined extraction call, with at most two attempts.
+Model, effort and API-style overrides are supported by the Stage D entry point.
+No extra orchestration LLM, external rates, summaries or reviewed answers.
+
+Output includes entity/facility IDs, separate parent-child links, numeric rates
+(`0.04` = 4%), stated rate periods, fee/interest distinction, explicit unknowns,
+verified citation IDs and a readable `source_evidence` lookup. Pydantic checks
+shape; Python checks references/citations and typed Decimal arithmetic. These
+checks do not prove the legal interpretation correct. Free-text formulas are
+never executed; unknown benchmark inputs remain unknown.
+
+Completed results and manifest-last provenance persist under
+`tmp/stage_d/<source-sha256>/<execution-id>/`. Each execution has a fresh directory,
+even when a run ID is reused. `tmp/runs/<run-id>/events.jsonl` always records basic
+telemetry; debug additionally saves evidence, prompts, visible responses and
+validation errors. Artifact paths appear in the `extraction_artifact` event.
+The HTML reviewer does not yet render Stage D; inspect its JSON/debug files.
+
+Design and build steps: [Stage D plan](docs/superpowers/plans/2026-10-03-stage-d-extraction.md).
 
 ## Requirements
 
@@ -69,7 +123,7 @@ OPENCODE_API_STYLE=responses
 The `.env` file is ignored by Git. Never commit API keys or other credentials.
 The shared OpenCode client is wired into B2. B2 defaults to Luna/high; the
 general client defaults to medium reasoning. Model/API-style/reasoning overrides
-are available per call. Downstream legal extraction is not yet implemented.
+are available per call. Stage D reuses this transport for initial legal-term extraction.
 
 ## Convert a document
 
@@ -280,16 +334,53 @@ deliberate safeguard against fabricated results.
 
 ## Evidence and extraction design
 
-The planned pipeline keeps extraction results traceable to the source:
+### Retrieve original evidence (B4/B5)
+
+```python
+from credit_agreement_extractor import retrieve_evidence
+
+# Use the completed B3 map and its matching B1 chunks; no model call here.
+evidence = retrieve_evidence(
+    topic_map, chunks,
+    topics=["parties_and_roles", "facility_and_commitment_terms"],
+    conversion=artifact,  # matching Stage A required for table evidence
+    debug=True, run_id="evidence-review",
+)
+print(evidence.evidence_json_path)
+```
+
+Downstream extraction chooses approved IDs from `topic_taxonomy.VOCABULARY`;
+B4 does not interpret broad requests. It returns all mapped groups for those
+topics, with explicit empty matches. Subtopic/parent expansion is not implicit.
+B5 adds original evidence and separate supporting context, page numbers,
+heading paths and container relationships, including canonical table data.
+It never summarizes, ranks, truncates or calls an LLM.
+
+Packets live beside the map under
+`evidence/<request-hash>/document.evidence.json`. Groups retain their canonical
+IDs/roles and gain `evidence` and `context` records with readable source text.
+This supports downstream inference and a future visual topic explorer; that
+explorer is not implemented by this change. Basic telemetry logs both stages;
+debug mode also captures inputs, selection and the persisted packet.
+
+New schema-v2 maps bind their B1 document hash. For a historical schema-v2 map
+without this binding, rebuild B3 with the same saved classifications and chunks
+in a new working/output location; no LLM rerun is needed. Historical schema-v1
+citations remain readable in review but are not accepted as passage roles here.
+Unknown topics, stale map/chunks, corrupt references and missing text fail
+explicitly. Table packaging needs a matching canonical Stage A artifact whose
+JSON hash matches B1. A10-off and page-less inputs remain supported.
+
+The pipeline keeps extraction results traceable to the source:
 
 1. Stage A converts the document while retaining canonical Docling item IDs,
    reading order, and page provenance.
 2. Stage B builds page-first chunks and a topic map that points back to the
    original items instead of replacing them with summaries.
 3. Stage C provides shared model routing and API adapters for each LLM step.
-4. The abstract downstream Stage D chooses approved taxonomy IDs, requests
-   evidence from B4/B5, extracts the requested data and validates citations.
-   Its internal agent topology and field schemas are not frozen.
+4. Stage D's fixed orchestrator coordinates one specialist for parties,
+   facilities and interest/fees. It requests B4/B5 evidence and returns validated,
+   source-cited JSON; new specialists remain an evaluation-driven later decision.
 
 Values must distinguish missing, uncertain, and not-applicable information.
 Models may cite canonical item IDs, but application code resolves those IDs to
@@ -373,43 +464,6 @@ src/credit_agreement_extractor/  # Python package
 tests/                           # unit and regression tests
 docs/                            # architecture, plans, and corpus audits
 raw_documents/pdf/               # immutable source PDFs
-### Retrieve original evidence (B4/B5)
-
-```python
-from credit_agreement_extractor import retrieve_evidence
-
-# Use the completed B3 map and its matching B1 chunks; no model call here.
-evidence = retrieve_evidence(
-    topic_map, chunks,
-    topics=["parties_and_roles", "facility_and_commitment_terms"],
-    conversion=artifact,  # matching Stage A required for table evidence
-    debug=True, run_id="evidence-review",
-)
-print(evidence.evidence_json_path)
-```
-
-Downstream extraction chooses approved IDs from `topic_taxonomy.VOCABULARY`;
-B4 does not interpret broad requests. It returns all mapped groups for those
-topics, with explicit empty matches. Subtopic/parent expansion is not implicit.
-B5 adds original evidence and separate supporting context, page numbers,
-heading paths and container relationships, including canonical table data.
-It never summarizes, ranks, truncates or calls an LLM.
-
-Packets live beside the map under
-`evidence/<request-hash>/document.evidence.json`. Groups retain their canonical
-IDs/roles and gain `evidence` and `context` records with readable source text.
-This supports downstream inference and a future visual topic explorer; that
-explorer is not implemented by this change. Basic telemetry logs both stages;
-debug mode also captures inputs, selection and the persisted packet.
-
-New schema-v2 maps bind their B1 document hash. For a historical schema-v2 map
-without this binding, rebuild B3 with the same saved classifications and chunks
-in a new working/output location; no LLM rerun is needed. Historical schema-v1
-citations remain readable in review but are not accepted as passage roles here.
-Unknown topics, stale map/chunks, corrupt references and missing text fail
-explicitly. Table packaging needs a matching canonical Stage A artifact whose
-JSON hash matches B1. A10-off and page-less inputs remain supported.
-
 raw_documents/htm/               # immutable source HTML/HTM files
 tmp/converted/                    # ignored generated conversion artifacts
 tmp/stage_b/                      # ignored B1–B3 artifacts and B2 checkpoints

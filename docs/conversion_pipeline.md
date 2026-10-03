@@ -288,8 +288,8 @@ The default pricing snapshot covers Luna inputs up to 272K tokens, checked
 2026-10-01; other models/tiers need explicit rates. Reasoning tokens are already
 included in output totals and are not charged twice. These estimates are not bills.
 
-Phoenix is deferred and is not a runtime dependency. B4/B5 retrieval is implemented;
-abstract downstream Stage D remains pending. Small smoke tests verify wiring, not legal
+Phoenix is deferred and is not a runtime dependency. B4/B5 retrieval and initial
+Stage D extraction are implemented. Small smoke tests verify wiring, not legal
 classification accuracy across the corpus.
 
 Implemented B1 begins from canonical Docling items and builds page-first chunks. Page
@@ -307,18 +307,30 @@ the extraction model.
 The extraction model may cite retained item identifiers, but it must not invent
 page numbers or coordinates. Application code resolves cited identifiers and
 copies verified provenance into the structured result. Missing or uncertain
-required fields trigger broader retrieval from the topic map.
+required fields remain explicit. Broader retrieval is a later bounded-policy
+decision; the first Stage D does not automatically expand or read the full source.
 
-Stage D is an abstract downstream extraction component. It owns the cognitive
-work of choosing approved taxonomy IDs for its information need, calls B4/B5
-for source evidence, extracts requested structured values, and validates its
-citations. No intermediate topic-resolver LLM is required. Its internal agent
-topology and field schemas remain open. Missing or uncertain results may request
-additional approved topics without silently reading the full agreement.
+Stage D uses one public fixed Python orchestrator and one specialist for parties,
+facility amounts and interest/fees. `extract_credit_terms(topic_map, chunks, ...)`
+accepts source artifact handles; the specialist requests approved taxonomy topics
+through shared B4/B5 tools and makes a combined C call. Pydantic validates JSON;
+Python validates source citations, entity references and supported rate arithmetic.
+Parent-child links stay separate from agreement roles; numeric rates retain their
+stated period, so monthly interest and one-time fees are not annualized silently.
 
-The older pending sleeve-specific D1–D9 diagram is superseded by the abstract
-D1 box below. Historical specifications remain unchanged; this is a deliberate
-design simplification, not implementation or renumbering of built components.
+`run_pipeline(path, ...)` directly calls D after successful B3 completion and emits
+`topic_map_ready`. Standalone B3 remains free of hidden paid work. Saved maps can
+enter D directly without reconversion/reclassification. Maximum two attempts;
+auth, configuration or substitution failures stop. No resolver LLM, autonomous
+loop, ground-truth inputs or external rate lookup. Missing values remain explicit.
+Free-text formulas are never executed. Completed output and provenance manifest
+persist in unique execution directories under `tmp/stage_d/<source-sha256>/`;
+manifest-last completion and debug traces preserve errors and historical results.
+
+The historical pending sleeve view and later abstract D1 are superseded by initial
+D1–D4 below. More specialists and broader extraction/evaluations remain later work.
+See the [design](superpowers/specs/2026-10-03-stage-d-extraction-design.md) and
+[implementation plan](superpowers/plans/2026-10-03-stage-d-extraction.md).
 
 Stage C is a cross-cutting interface rather than a step in the document data
 flow. Every purple LLM box uses the shared routing and transport contract in
@@ -327,6 +339,35 @@ The diagram therefore keeps C isolated instead of routing document artifacts
 through its adapter boxes.
 
 ## Pipeline
+
+### B4/B5 downstream evidence entry point
+
+`retrieve_evidence(topic_map, chunks, *, topics, conversion=None, debug=False,
+run_id=None, trace_root="tmp/runs")` returns an `EvidenceArtifact` pointing to
+the persisted readable JSON packet. B4 accepts only approved taxonomy IDs,
+retrieves every mapped passage group for them and reports empty matches.
+Downstream extraction resolves broad topics itself; no intermediate model.
+
+B5 attaches original source text, separate evidence/context roles, pages,
+headings and container ancestry. Tables use the existing canonical grid
+renderer with a Stage A hash matching B1; no joined-page substitution.
+There is no truncation, ranking, implicit parent expansion or LLM call.
+The shared classifier/reviewer source-item resolver remains deferred.
+
+New schema-v2 maps include `chunks_document_sha256`, binding their B1 content.
+Rebuild older schema-v2 maps through deterministic B3 before retrieval; saved
+classifications need not be rerun. Historical schema-v1 is not reinterpreted.
+Packets persist beside the map at `evidence/<request-hash>/document.evidence.json`
+with input fingerprints; distinct requests/maps/modes stay isolated. Basic
+events record B4/B5, debug captures source inputs, selection and the final packet.
+The packet can power a later visual topic explorer; existing HTML remains as-is.
+
+Acceptance includes strict topic/hash/citation/group-order/provenance rejection,
+full wording and context separation, canonical table cells, trace failures and
+immutable input tests. A source-only saved 011 smoke packaged 8 parties, 11
+facility/commitment and 8 interest groups (85 direct-evidence records) without
+paid calls or human-label reads; this is wiring evidence, not an accuracy claim.
+
 
 ### Human review surface
 
@@ -367,63 +408,38 @@ Status and cognitive work use separate visual signals:
 A10, A11, and B1 are implemented and tested. Their boxes and the A11-to-B1
 connection are solid. B1-to-B2-to-B3 is solid; B2 is purple because it
 uses an LLM. B3-to-B4-to-B5 is solid after retrieval/packaging acceptance checks.
-Connections to abstract D remain dashed: extraction is pending.
+Initial D1–D4 and the composed readiness/tool connections are solid after acceptance.
+D2 is purple because it calls the LLM; fixed D1/D3/D4 use implemented green boxes.
 Shared C1–C6 transport is implemented and tested.
 
 ```mermaid
 flowchart TD
     subgraph A_GROUP["A — Document intake and conversion"]
-        A1[A1 — PDF, HTML, or HTM path] --> A2[A2 — Validate and calculate SHA-256]
-        A2 --> A3{A3 — Complete cached artifacts? Development only}
-        A3 -->|Yes — current shortcut| A3_1[A3.1 — Return current ConversionArtifact]
-        A3 -->|No — cache miss| A4{A4 — Document format router}
-        A2 -.->|Target production route — bypass cache| A4
-        A4 -->|PDF| A5[A5 — Docling PDF pipeline: local English OCR and heading-hierarchy inference]
-### B4/B5 downstream evidence entry point
-
-`retrieve_evidence(topic_map, chunks, *, topics, conversion=None, debug=False,
-run_id=None, trace_root="tmp/runs")` returns an `EvidenceArtifact` pointing to
-the persisted readable JSON packet. B4 accepts only approved taxonomy IDs,
-retrieves every mapped passage group for them and reports empty matches.
-Downstream extraction resolves broad topics itself; no intermediate model.
-
-B5 attaches original source text, separate evidence/context roles, pages,
-headings and container ancestry. Tables use the existing canonical grid
-renderer with a Stage A hash matching B1; no joined-page substitution.
-There is no truncation, ranking, implicit parent expansion or LLM call.
-The shared classifier/reviewer source-item resolver remains deferred.
-
-New schema-v2 maps include `chunks_document_sha256`, binding their B1 content.
-Rebuild older schema-v2 maps through deterministic B3 before retrieval; saved
-classifications need not be rerun. Historical schema-v1 is not reinterpreted.
-Packets persist beside the map at `evidence/<request-hash>/document.evidence.json`
-with input fingerprints; distinct requests/maps/modes stay isolated. Basic
-events record B4/B5, debug captures source inputs, selection and the final packet.
-The packet can power a later visual topic explorer; existing HTML remains as-is.
-
-Acceptance includes strict topic/hash/citation/group-order/provenance rejection,
-full wording and context separation, canonical table cells, trace failures and
-immutable input tests. A source-only saved 011 smoke packaged 8 parties, 11
-facility/commitment and 8 interest groups (85 direct-evidence records) without
-paid calls or human-label reads; this is wiring evidence, not an accuracy claim.
-
-        A4 -->|Plain HTML| A6[A6 — Docling HTML pipeline]
-        A4 -->|Gzip-wrapped HTML| A7[A7 — Temporary local decompression]
+        direction TB
+        A1["A1 — Input path<br/>PDF / HTML / HTM"] --> A2["A2 — Validate input<br/>Calculate SHA-256"]
+        A2 --> A3{"A3 — Valid cache?<br/>Development only"}
+        A3 -->|Cache hit| A3_1["A3.1 — Return<br/>cached artifact"]
+        A3 -->|Cache miss| A4{A4 — Document format router}
+        A2 -.->|Production target| A4
+        A4 -->|PDF| A5["A5 — Docling PDF<br/>OCR + heading inference"]
+        A4 -->|HTML| A6[A6 — Docling HTML]
+        A4 -->|Gzip HTML| A7[A7 — Decompress temporarily]
         A7 --> A6
         A5 --> A8[A8 — Canonical DoclingDocument]
         A6 --> A8
-        A8 --> A9[A9 — Write canonical Docling JSON and readable Markdown]
-        A9 -->|use_hierarchy=true: default| A10[A10 — Hierarchy sidecar: on by default]
-        A9 -->|use_hierarchy=false| A11
-        A10 --> A11[A11 — Finalize manifest and return enriched ConversionArtifact]
+        A8 --> A9["A9 — Persist<br/>Docling JSON + Markdown"]
+        A9 -->|Hierarchy on: default| A10[A10 — Hierarchy sidecar]
+        A9 -->|Hierarchy off| A11
+        A10 --> A11["A11 — Finalize manifest<br/>Return conversion artifact"]
     end
 
     subgraph B_GROUP["B — Topic-map construction and evidence retrieval"]
-        B1[B1 — Build page-first chunks retaining Docling item IDs]
-        B2[B2 — LLM passage selection: direct evidence and supporting context; up to 5 parallel batches]
-        B3[B3 — Build provenance-preserving topic-to-passage map]
-        B4[B4 — Retrieve topic-specific source evidence]
-        B5[B5 — Assemble topic-evidence bundle with source IDs]
+        direction TB
+        B1["B1 — Page-first chunks<br/>Preserve source IDs"]
+        B2["B2 — LLM classification<br/>Evidence + context groups"]
+        B3[B3 — Topic-to-passage map]
+        B4[B4 — Retrieve approved topics]
+        B5["B5 — Package evidence<br/>Original text + provenance"]
         B1 --> B2
         B2 --> B3
         B3 --> B4
@@ -431,8 +447,9 @@ paid calls or human-label reads; this is wiring evidence, not an accuracy claim.
     end
 
     subgraph C_GROUP["C — Shared LLM interface logistics — cross-cutting"]
-        C1[C1 — Default model and reasoning configuration]
-        C2[C2 — Call-time model, reasoning, and API-style overrides]
+        direction TB
+        C1[C1 — Model defaults]
+        C2[C2 — Call-time overrides]
         C3[C3 — OpenCode model router]
         C4[C4 — Responses API adapter]
         C5[C5 — Chat Completions API adapter]
@@ -444,13 +461,22 @@ paid calls or human-label reads; this is wiring evidence, not an accuracy claim.
         C3 --> C6
     end
 
-    subgraph D_GROUP["D — Abstract downstream extraction — pending"]
-        D1[D1 — Choose approved topics, extract requested data, validate source citations]
+    subgraph D_GROUP["D — Orchestrated credit-term extraction"]
+        direction TB
+        D1["D1 — Orchestrator<br/>Validate job · coordinate"]
+        D2["D2 — One specialist<br/>Parties · facilities · interest"]
+        D3["D3 — Validate<br/>Citations · IDs · rates"]
+        D4["D4 — Persist result<br/>Return document JSON"]
+        D1 --> D2
+        D2 --> D3
+        D3 --> D4
     end
 
     A11 --> B1
-    D1 -.->|Request approved topic IDs| B4
-    B5 -.->|Return source evidence packet| D1
+    A3_1 -->|Cached artifact: dev only| B1
+    B3 -->|Composed runner: topic map ready| D1
+    D2 -->|Approved topic IDs| B4
+    B5 -->|Evidence packet| D2
 
     classDef implemented fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1f2937;
     classDef pending fill:#f3f4f6,stroke:#6b7280,stroke-width:2px,stroke-dasharray:6 4,color:#1f2937;
@@ -461,11 +487,15 @@ paid calls or human-label reads; this is wiring evidence, not an accuracy claim.
     class A1,A2,A3,A3_1,A4,A5,A6,A7,A8,A9,A10,A11 implemented;
     class B1,B3,B4,B5,C1,C2,C3,C4,C5,C6 implemented;
     class B2 cognitiveImplemented;
-    class D1 cognitivePending;
+    class D1,D3,D4 implemented;
+    class D2 cognitiveImplemented;
 ```
 
 The development cache shortcut returns through A3.1 only when all mode-required
-files and their recorded identities validate. On a cache miss, A9 writes canonical
+files and their recorded identities validate, then hands that artifact to B1.
+This A3.1-to-B1 shortcut is development-only; the target production route still
+bypasses the cache through A4 and reaches B1 through A11.
+On a cache miss, A9 writes canonical
 JSON and Markdown, optionally A10 builds the sidecar, and A11 writes the
 completed manifest last before returning the enriched artifact.
 
