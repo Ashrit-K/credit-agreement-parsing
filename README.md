@@ -24,10 +24,10 @@ than inventing borrower or lender data.
 | Sidecar persistence and final Stage A artifact | Implemented and tested (`A11`) |
 | Page-first provenance-preserving chunks | Implemented and tested (`B1`) |
 | LLM passage classification and provenance-preserving topic map | Implemented and tested (`B2`, `B3`) |
-| Evidence retrieval and bundle assembly | Planned (`B4`, `B5`) |
+| Evidence retrieval and bundle assembly | Implemented (`B4`, `B5`) |
 | Shared OpenCode LLM interface | Implemented and tested (`Stage C`; Responses, Chat and Qwen Messages tiny-live checked) |
 | Local telemetry and opt-in detailed debug capture | Implemented; Phoenix deferred |
-| Sleeve-based legal-term extraction | Planned (`Stage D`) |
+| Downstream extraction of requested data | Planned (`Stage D`, abstract) |
 
 The authoritative numbered architecture, Mermaid diagram, and implementation
 status live in [`docs/conversion_pipeline.md`](docs/conversion_pipeline.md).
@@ -69,7 +69,7 @@ OPENCODE_API_STYLE=responses
 The `.env` file is ignored by Git. Never commit API keys or other credentials.
 The shared OpenCode client is wired into B2. B2 defaults to Luna/high; the
 general client defaults to medium reasoning. Model/API-style/reasoning overrides
-are available per call. The legal extraction sleeves are not yet implemented.
+are available per call. Downstream legal extraction is not yet implemented.
 
 ## Convert a document
 
@@ -287,8 +287,9 @@ The planned pipeline keeps extraction results traceable to the source:
 2. Stage B builds page-first chunks and a topic map that points back to the
    original items instead of replacing them with summaries.
 3. Stage C provides shared model routing and API adapters for each LLM step.
-4. Stage D runs only the requested extraction sleeves, validates their schemas
-   and citations independently, and merges the validated results.
+4. The abstract downstream Stage D chooses approved taxonomy IDs, requests
+   evidence from B4/B5, extracts the requested data and validates citations.
+   Its internal agent topology and field schemas are not frozen.
 
 Values must distinguish missing, uncertain, and not-applicable information.
 Models may cite canonical item IDs, but application code resolves those IDs to
@@ -372,6 +373,43 @@ src/credit_agreement_extractor/  # Python package
 tests/                           # unit and regression tests
 docs/                            # architecture, plans, and corpus audits
 raw_documents/pdf/               # immutable source PDFs
+### Retrieve original evidence (B4/B5)
+
+```python
+from credit_agreement_extractor import retrieve_evidence
+
+# Use the completed B3 map and its matching B1 chunks; no model call here.
+evidence = retrieve_evidence(
+    topic_map, chunks,
+    topics=["parties_and_roles", "facility_and_commitment_terms"],
+    conversion=artifact,  # matching Stage A required for table evidence
+    debug=True, run_id="evidence-review",
+)
+print(evidence.evidence_json_path)
+```
+
+Downstream extraction chooses approved IDs from `topic_taxonomy.VOCABULARY`;
+B4 does not interpret broad requests. It returns all mapped groups for those
+topics, with explicit empty matches. Subtopic/parent expansion is not implicit.
+B5 adds original evidence and separate supporting context, page numbers,
+heading paths and container relationships, including canonical table data.
+It never summarizes, ranks, truncates or calls an LLM.
+
+Packets live beside the map under
+`evidence/<request-hash>/document.evidence.json`. Groups retain their canonical
+IDs/roles and gain `evidence` and `context` records with readable source text.
+This supports downstream inference and a future visual topic explorer; that
+explorer is not implemented by this change. Basic telemetry logs both stages;
+debug mode also captures inputs, selection and the persisted packet.
+
+New schema-v2 maps bind their B1 document hash. For a historical schema-v2 map
+without this binding, rebuild B3 with the same saved classifications and chunks
+in a new working/output location; no LLM rerun is needed. Historical schema-v1
+citations remain readable in review but are not accepted as passage roles here.
+Unknown topics, stale map/chunks, corrupt references and missing text fail
+explicitly. Table packaging needs a matching canonical Stage A artifact whose
+JSON hash matches B1. A10-off and page-less inputs remain supported.
+
 raw_documents/htm/               # immutable source HTML/HTM files
 tmp/converted/                    # ignored generated conversion artifacts
 tmp/stage_b/                      # ignored B1–B3 artifacts and B2 checkpoints

@@ -20,7 +20,7 @@ The authoritative numbered architecture and implementation status live in `docs/
 - Dashed boxes and arrows are pending.
 - Purple boxes are LLM or other cognitive steps.
 - Component IDs are stable within their explicit layout. Current `stage-b-v2`
-  uses B1 chunks, B2 LLM classification, B3 map, pending B4 retrieval and B5 packaging.
+  uses B1 chunks, B2 LLM classification, B3 map, B4 retrieval and B5 packaging.
   Historical unmarked runs keep B2 heuristics, B3 classification and B4 map;
   old B3 → new B2, old B4 → new B3, old B5 → new B4, old B6 → new B5.
   Deleted heuristic B2 has no current counterpart. Preserve historical plans/reports.
@@ -102,8 +102,18 @@ from `topic_taxonomy.py`; definition hashes invalidate checkpoint
 reuse independently of unchanged topic IDs.
 No possible-label bucket or Jev/verifier layer. B3's
 `build_topic_map()` validates classifications and persists a deterministic
-topic-to-passage index, not summaries. B4 and B5 remain pending and will retrieve and package
-original topic-specific evidence for extraction sleeves.
+topic-to-passage index, not summaries. B4/B5 are implemented through
+`retrieve_evidence(topic_map, chunks, *, topics, conversion=None, ...)`.
+Only approved taxonomy IDs are accepted; downstream extraction owns cognitive
+topic resolution. Retrieve all exact mapped groups without ranking/truncation;
+return empty matches explicitly. B5 resolves original evidence/context wording,
+pages, headings and containers. Tables require matching hash-verified canonical
+Stage A JSON. No new model call, no source rewrite, no question interpretation.
+New schema-v2 maps bind semantic B1 JSON with `chunks_document_sha256`; old
+schema-v2 maps must be rebuilt offline by B3. Schema-v1 remains reviewer-only
+and is not reinterpreted. Request-specific packets persist adjacent to the map
+under `evidence/<request-hash>/document.evidence.json`; basic/debug traces cover
+B4/B5 and the `topic_evidence` composition. No cache shortcut initially.
 
 The original passage-level refinement (historical B3/B4 numbering) is documented in
 `docs/superpowers/plans/2026-10-01-b3-b4-passage-evidence.md`.
@@ -139,7 +149,12 @@ diagnostics. Never capture keys, authorization headers, or hidden reasoning.
 `summarize_run()` provides local analytics. Estimates use dated gateway rates;
 unknown costs remain unknown. Phoenix is deferred, not a build dependency.
 
-Planned Stage D is sleeve-based LLM extraction. Each independently testable sleeve owns one coherent field family, system prompt, output schema, topic-map evidence packet, and validation rules. Initial sleeves cover parties, interest terms, maturity and extension, covenants, and repayment terms; add further field-family sleeves without redesigning the pipeline. Run only the sleeves requested for a job. Require a shared result envelope with structured values, uncertainty, and cited Docling item IDs. Validate each sleeve independently, broaden topic-map retrieval only for affected sleeves, resolve citations to verified evidence, and merge validated sleeves into the requested document-level JSON.
+Planned Stage D is abstract downstream extraction. The downstream component
+resolves its information need into approved taxonomy IDs, requests B4/B5 source
+evidence, extracts requested structured data and validates source citations.
+Do not freeze sleeve topology, field schemas or an extra topic-resolver LLM.
+Keep uncertainty and verified item citations; additional evidence requests use
+approved topic IDs. The old pending detailed D diagram is superseded by D1.
 
 ## Source Documents
 

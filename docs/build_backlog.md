@@ -33,7 +33,9 @@ component IDs match the authoritative diagram in
 | Stage B simplification | Implemented | A10-on default, remove heuristics and renumber B | B1 chunks → B2 LLM classification → B3 map; pending B4 retrieval / B5 packaging. Explicit current layout and historical run compatibility; preserve A10 opt-out. Acceptance passed: 271 commit-scope tests; historical/current reviewer coverage and independent review. | A10, classification, map, reviewer | [Implementation plan](superpowers/plans/2026-10-02-stage-b-simplification.md) |
 | B2/B3 passage contract simplification | Deferred | Consider topic-specific item groups without evidence/context roles | Evaluate grouped `item_ids` against context interpretation, retrieval and historical compatibility before approval. Keep current roles unchanged. | B2/B3, evaluations | Backlog-only deferral on 2026-10-02; originally named B3/B4 |
 | C1–C6 | Implemented | Shared OpenCode transport | Responses/Chat/Qwen Messages adapters, xhigh forwarding, overrides, normalized cache accounting and reasoning-safe telemetry; model defaults unchanged. | Credentials | Historical [transport plan](superpowers/plans/2026-10-01-b3-topic-reflection.md) |
-| B4/B5 | Pending | Retrieval and evidence packaging | Retrieve original topic-specific evidence for requested extraction sleeves, then package cited evidence. | B3 | — |
+| B4/B5 | Implemented | Strict topic retrieval and evidence packaging | `retrieve_evidence()` validates approved topic IDs and map/B1 fingerprints, retrieves all exact groups, resolves original evidence/context and table cells with verified provenance, and persists request-specific packets with traces. No resolver LLM, ranking or question filtering. | B3, B1; matching Stage A for tables | [Implementation plan](superpowers/plans/2026-10-03-b4-b5-evidence-retrieval.md) |
+| D1 | Pending | Abstract downstream extraction | Downstream component chooses approved topic IDs, uses B4/B5 evidence, extracts requested structured values and validates citations; agent/sleeve topology and field schemas remain open. Supersedes older detailed pending D view. | B4/B5, C | — |
+| B4/B5 visual topic explorer | Deferred | Human-readable topic-map visualization | Use B3 structure, B4 selections and B5 source text/provenance without new classification. Current saved-run HTML remains unchanged. | B4/B5 packets | — |
 | Observability: Phoenix | Deferred | Trace UI | Revisit later; no classification/map dependency. | Local telemetry | — |
 | Human topic annotation | Implemented | Golden passage label editor | Approved source queue, durable human saves/reload/export; human labels excluded from pipeline inputs. | Stage A | [Annotation plan](superpowers/plans/2026-10-01-human-topic-annotation.md) |
 | Human review HTML | Implemented | Saved-run reviewer | Current A/B1–B3/C review and original historical stage labels, using actual saved source evidence and attempt identities. Live dashboard remains deferred. | Debug snapshots | [Simplification plan](superpowers/plans/2026-10-02-stage-b-simplification.md) |
@@ -48,6 +50,22 @@ Saved plans/reports remain history. The 011 ablations motivate this simplificati
 but do not prove a universal improvement or isolate stochastic/packing effects.
 
 ## Verification evidence
+
+### B4/B5 retrieval and evidence packaging — 2026-10-03
+
+- Strict approved-topic selection, source-bound schema-v2 maps, canonical group
+  identity/order/provenance checks and original evidence/context packaging.
+- Request-specific persisted packets, separate B4/B5 spans and basic/debug
+  public API traces; malformed input and source/table hash failures are covered.
+- Saved source-only 011 smoke: 8 parties, 11 facility/commitment and 8 interest
+  groups, 85 readable direct-evidence records; no model calls or ground-truth
+  reads. Saved chunks/classifications verified byte-identical afterward.
+- Exact staged snapshot: 298 passed; full local suite: 318 passed, including
+  unrelated working changes left out of the commit. Independent review found a group-order
+  validation gap; a failing regression reproduced it, and the correction passed.
+- Abstract pending D1 replaces the detailed pending sleeve view. B4/B5 boxes and
+  edges are solid; D remains dashed/purple. Existing HTML is unchanged; a visual
+  explorer is deferred, supported by the new packet contract.
 
 ### Current Stage B simplification — 2026-10-02
 

@@ -143,8 +143,8 @@ or Stage A input-hash mismatch rebuilds only B1 and does not rerun Docling.
 ## Topic-map and evidence rule
 
 The current layout is explicitly `stage-b-v2`: B1 chunks → B2 LLM passage
-classification → B3 topic-map construction → pending B4 evidence retrieval →
-pending B5 packaging. `reflect_topics(chunks, *, ...)` consumes source chunks
+classification → B3 topic-map construction → B4 evidence retrieval →
+B5 packaging. `reflect_topics(chunks, *, ...)` consumes source chunks
 without heuristics; `classify_chunks`, `TopicSignalsArtifact`, phrase rules,
 signals inputs and `use_b2` have been removed. Topic IDs/definitions, model
 settings and passage evidence/context roles remain unchanged.
@@ -288,8 +288,8 @@ The default pricing snapshot covers Luna inputs up to 272K tokens, checked
 2026-10-01; other models/tiers need explicit rates. Reasoning tokens are already
 included in output totals and are not charged twice. These estimates are not bills.
 
-Phoenix is deferred and is not a runtime dependency. B4/B5 retrieval and Stage D
-extraction sleeves remain pending. Small smoke tests verify wiring, not legal
+Phoenix is deferred and is not a runtime dependency. B4/B5 retrieval is implemented;
+abstract downstream Stage D remains pending. Small smoke tests verify wiring, not legal
 classification accuracy across the corpus.
 
 Implemented B1 begins from canonical Docling items and builds page-first chunks. Page
@@ -309,17 +309,16 @@ page numbers or coordinates. Application code resolves cited identifiers and
 copies verified provenance into the structured result. Missing or uncertain
 required fields trigger broader retrieval from the topic map.
 
-Stage D uses independently testable extraction sleeves. Each sleeve owns one
-coherent field family, its system prompt, response schema, topic-map evidence
-packet, and validation rules. Initial sleeves cover parties, interest terms,
-maturity and extension, covenants, and repayment terms. A run may invoke only
-the sleeves required by the requested output, and additional sleeves can be
-added without redesigning the rest of the pipeline.
+Stage D is an abstract downstream extraction component. It owns the cognitive
+work of choosing approved taxonomy IDs for its information need, calls B4/B5
+for source evidence, extracts requested structured values, and validates its
+citations. No intermediate topic-resolver LLM is required. Its internal agent
+topology and field schemas remain open. Missing or uncertain results may request
+additional approved topics without silently reading the full agreement.
 
-Sleeves return a common result envelope containing structured values,
-uncertainty, and cited Docling item IDs. Each sleeve is validated independently;
-only a failed or incomplete sleeve broadens its evidence retrieval. Validated
-sleeve results are then merged into the requested document-level JSON.
+The older pending sleeve-specific D1–D9 diagram is superseded by the abstract
+D1 box below. Historical specifications remain unchanged; this is a deliberate
+design simplification, not implementation or renumbering of built components.
 
 Stage C is a cross-cutting interface rather than a step in the document data
 flow. Every purple LLM box uses the shared routing and transport contract in
@@ -346,7 +345,9 @@ and events are expandable. Narrow browser panels use source/results switching;
 wide browsers show them side-by-side.
 
 Exports are snapshots, refreshed by rerunning the export command in README.
-They do not run conversion/models or invent outputs for B4/B5/D. Stage A's
+They do not run conversion/models or invent outputs for downstream D. The current
+HTML reviewer does not yet expose B4/B5 packets; those remain available as JSON
+and debug traces. Stage A's
 substeps were not separately traced in the current evaluation run. The full
 live pipeline/progress dashboard is parked; Phoenix remains deferred.
 
@@ -365,8 +366,9 @@ Status and cognitive work use separate visual signals:
 
 A10, A11, and B1 are implemented and tested. Their boxes and the A11-to-B1
 connection are solid. B1-to-B2-to-B3 is solid; B2 is purple because it
-uses an LLM. B3-to-B4 and later connections remain dashed: retrieval and
-extraction are pending. Shared C1–C6 transport is implemented and tested.
+uses an LLM. B3-to-B4-to-B5 is solid after retrieval/packaging acceptance checks.
+Connections to abstract D remain dashed: extraction is pending.
+Shared C1–C6 transport is implemented and tested.
 
 ```mermaid
 flowchart TD
@@ -377,6 +379,34 @@ flowchart TD
         A3 -->|No — cache miss| A4{A4 — Document format router}
         A2 -.->|Target production route — bypass cache| A4
         A4 -->|PDF| A5[A5 — Docling PDF pipeline: local English OCR and heading-hierarchy inference]
+### B4/B5 downstream evidence entry point
+
+`retrieve_evidence(topic_map, chunks, *, topics, conversion=None, debug=False,
+run_id=None, trace_root="tmp/runs")` returns an `EvidenceArtifact` pointing to
+the persisted readable JSON packet. B4 accepts only approved taxonomy IDs,
+retrieves every mapped passage group for them and reports empty matches.
+Downstream extraction resolves broad topics itself; no intermediate model.
+
+B5 attaches original source text, separate evidence/context roles, pages,
+headings and container ancestry. Tables use the existing canonical grid
+renderer with a Stage A hash matching B1; no joined-page substitution.
+There is no truncation, ranking, implicit parent expansion or LLM call.
+The shared classifier/reviewer source-item resolver remains deferred.
+
+New schema-v2 maps include `chunks_document_sha256`, binding their B1 content.
+Rebuild older schema-v2 maps through deterministic B3 before retrieval; saved
+classifications need not be rerun. Historical schema-v1 is not reinterpreted.
+Packets persist beside the map at `evidence/<request-hash>/document.evidence.json`
+with input fingerprints; distinct requests/maps/modes stay isolated. Basic
+events record B4/B5, debug captures source inputs, selection and the final packet.
+The packet can power a later visual topic explorer; existing HTML remains as-is.
+
+Acceptance includes strict topic/hash/citation/group-order/provenance rejection,
+full wording and context separation, canonical table cells, trace failures and
+immutable input tests. A source-only saved 011 smoke packaged 8 parties, 11
+facility/commitment and 8 interest groups (85 direct-evidence records) without
+paid calls or human-label reads; this is wiring evidence, not an accuracy claim.
+
         A4 -->|Plain HTML| A6[A6 — Docling HTML pipeline]
         A4 -->|Gzip-wrapped HTML| A7[A7 — Temporary local decompression]
         A7 --> A6
@@ -396,8 +426,8 @@ flowchart TD
         B5[B5 — Assemble topic-evidence bundle with source IDs]
         B1 --> B2
         B2 --> B3
-        B3 -.-> B4
-        B4 -.-> B5
+        B3 --> B4
+        B4 --> B5
     end
 
     subgraph C_GROUP["C — Shared LLM interface logistics — cross-cutting"]
@@ -414,44 +444,13 @@ flowchart TD
         C3 --> C6
     end
 
-    subgraph D_GROUP["D — Sleeve-based LLM extraction and validation"]
-        D1[D1 — Select requested extraction sleeves and schemas]
-        D2[D2 — Dispatch topic-map evidence to selected sleeves]
-        D3_1[D3.1 — Parties extraction sleeve]
-        D3_2[D3.2 — Interest terms extraction sleeve]
-        D3_3[D3.3 — Maturity and extension extraction sleeve]
-        D3_4[D3.4 — Covenants extraction sleeve]
-        D3_5[D3.5 — Repayment terms extraction sleeve]
-        D3_6[D3.6 — Additional field-family sleeves]
-        D4[D4 — Normalize sleeve result envelopes]
-        D5[D5 — Validate each sleeve schema and citations]
-        D6{D6 — Any sleeve missing, uncertain, or unsupported?}
-        D7[D7 — Broaden evidence for affected sleeves only]
-        D8[D8 — Resolve cited Docling item IDs to verified evidence]
-        D9[D9 — Merge validated sleeves into requested-data JSON]
-        D1 -.-> D2
-        D2 -.-> D3_1
-        D2 -.-> D3_2
-        D2 -.-> D3_3
-        D2 -.-> D3_4
-        D2 -.-> D3_5
-        D2 -.-> D3_6
-        D3_1 -.-> D4
-        D3_2 -.-> D4
-        D3_3 -.-> D4
-        D3_4 -.-> D4
-        D3_5 -.-> D4
-        D3_6 -.-> D4
-        D4 -.-> D5
-        D5 -.-> D6
-        D6 -.->|Yes| D7
-        D6 -.->|No| D8
-        D8 -.-> D9
+    subgraph D_GROUP["D — Abstract downstream extraction — pending"]
+        D1[D1 — Choose approved topics, extract requested data, validate source citations]
     end
 
     A11 --> B1
-    B5 -.-> D1
-    D7 -.-> B4
+    D1 -.->|Request approved topic IDs| B4
+    B5 -.->|Return source evidence packet| D1
 
     classDef implemented fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1f2937;
     classDef pending fill:#f3f4f6,stroke:#6b7280,stroke-width:2px,stroke-dasharray:6 4,color:#1f2937;
@@ -460,10 +459,9 @@ flowchart TD
     classDef cognitivePending fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,stroke-dasharray:6 4,color:#1f2937;
 
     class A1,A2,A3,A3_1,A4,A5,A6,A7,A8,A9,A10,A11 implemented;
-    class B1,B3,C1,C2,C3,C4,C5,C6 implemented;
+    class B1,B3,B4,B5,C1,C2,C3,C4,C5,C6 implemented;
     class B2 cognitiveImplemented;
-    class B4,B5,D1,D2,D4,D5,D6,D7,D8,D9 pending;
-    class D3_1,D3_2,D3_3,D3_4,D3_5,D3_6 cognitivePending;
+    class D1 cognitivePending;
 ```
 
 The development cache shortcut returns through A3.1 only when all mode-required

@@ -11,10 +11,12 @@ from .hierarchy import InvalidHierarchyInputError
 from .chunk_validation import InvalidTopicInputError
 from .topic_reflection import TopicClassificationArtifact, reflect_topics
 from .topic_map import TopicMapArtifact, build_topic_map
+from .evidence import EvidenceArtifact, retrieve_evidence
 from .llm import OpenCodeClient, LlmResponse, LlmError
 from .tracing import summarize_run
 
 __all__ = [
+    "EvidenceArtifact", "retrieve_evidence",
     "TopicClassificationArtifact", "reflect_topics", "TopicMapArtifact", "build_topic_map",
     "OpenCodeClient", "LlmResponse", "LlmError",
     "summarize_run",
