@@ -62,7 +62,7 @@ print(packet.evidence_json_path)
 - [x] Document interfaces, packet contract, stale-map rebuild and table dependency. Existing visual reviewer remains unchanged; packet is suitable for a later topic explorer, not a claim of UI implementation.
 - [x] Update Obsidian in Ashrit's voice and daily 2026-10-03; preserve existing notes.
 - [x] Review diff, run full suite and `git diff --check`; inspect staged files for secrets/generated/human-label data and exclude unrelated changes.
-- [ ] Commit scoped changes and push main; verify remote commit. Mark goal complete only after delivery, report actual checks and limits.
+- [x] Commit scoped changes and push main; verify remote commit. Mark goal complete only after delivery, report actual checks and limits.
 
 ## Verification recorded before delivery
 
@@ -75,3 +75,6 @@ print(packet.evidence_json_path)
 - Eleven scoped staged files scanned against local credential values, private-key
   markers and prohibited data paths: no findings. Diff whitespace checks pass.
 - Obsidian project and 2026-10-03 daily updated; HTML reviewer unchanged.
+- Implementation commit `4a8dbd0` pushed to `origin/main`; exact remote SHA
+  verified as `4a8dbd0d89c4470d1ce524a78785b8c25ae24e08`. Unrelated changes
+  remain in the working tree, excluded from this delivery.
