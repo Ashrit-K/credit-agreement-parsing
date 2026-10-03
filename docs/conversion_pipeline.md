@@ -387,10 +387,41 @@ wide browsers show them side-by-side.
 
 Exports are snapshots, refreshed by rerunning the export command in README.
 They do not run conversion/models or invent outputs for downstream D. The current
-HTML reviewer does not yet expose B4/B5 packets; those remain available as JSON
-and debug traces. Stage A's
-substeps were not separately traced in the current evaluation run. The full
-live pipeline/progress dashboard is parked; Phoenix remains deferred.
+HTML reviewer exposes recorded B4/B5 packets and D extraction with original
+cited source. Historical evaluation runs lack separately traced Stage A substeps;
+new runs record actual A1–A11 boundaries. Phoenix remains deferred.
+
+### Local execution and review interface — implemented
+
+`workbench.py` serves `workbench.html` on `127.0.0.1:60900`. This interface is
+outside the pipeline: it starts one real runner job, polls durable events and
+reuses the saved reviewer. It never replaces pipeline artifacts with illustrative
+data. A5/A6 progress denotes converter setup; A8 denotes conversion. Cache hits
+record A3.1 and explicitly skip A4–A11. Unrecorded historical substeps remain unknown.
+Debug adds actual inputs/outputs, model exchanges and validation diagnostics;
+debug-off runs still show real events. The source PDF and verified citations are
+available alongside readable artifacts. B2 batch counts preserve concurrent
+attempt identities, not invented completion percentages.
+
+UI defaults: B2 DeepSeek V4 Flash/medium, D2 DeepSeek V4 Pro/high, A10/debug on.
+D2 remains one combined extraction call. Controls override B2 and D2 independently.
+Only a deliberate launch spends API tokens; polling and history inspection are read-only.
+
+```mermaid
+flowchart LR
+    U1["U1 — Select corpus PDF<br/>Configure models / debug"] --> U2["U2 — One-job controller"]
+    U2 --> P["Existing A → B → D runner"]
+    P --> U3["U3 — Recorded live progress"]
+    U3 --> U4["U4 — Artifact / source inspector<br/>Saved run switching"]
+    classDef implemented fill:#e8f4ea,stroke:#2f7d32,stroke-width:2px;
+    class U1,U2,P,U3,U4 implemented;
+```
+
+Solid boxes/arrows indicate tested interface wiring. Purple inference remains
+inside B2 and D2 in the authoritative pipeline diagram below; Stage C stays
+cross-cutting, not an artifact-processing stage. The workbench is loopback-only,
+has launch origin/token checks and exclusive controller ownership, and preserves
+raw documents and ground-truth isolation.
 
 ### Architecture diagram
 

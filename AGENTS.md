@@ -154,7 +154,8 @@ Stage D's initial fixed Python orchestrator is implemented through
 entry accepts D jobs and returns document JSON. One bounded specialist covers
 parties, facility amounts and interest/fees, calling shared B4/B5 retrieval and C
 transport. No additional orchestration/resolver LLM or autonomous loop. Defaults
-follow Stage C; model/effort/API-style overrides remain available. Parent-child
+are DeepSeek V4 Pro/high, independent of general Stage C defaults;
+model/effort/API-style overrides remain available. Parent-child
 links are separate from agreement roles; role casing/spacing is normalized.
 Preserve IDs, numeric fraction rates, stated rate periods, explicit unknowns and
 source citations. Typed Decimal calculations never execute free-text formulas.
@@ -167,7 +168,7 @@ Persist unique execution results under `tmp/stage_d/<source-sha256>/` and write
 the provenance manifest last; never overwrite successful historical runs.
 D1 orchestration, D2 specialist, D3 validation and D4 completion have basic/debug
 traces, original evidence/context, source lookup and sanitized retry diagnostics.
-The saved HTML reviewer has not gained a Stage D view. Human extraction evals,
+The saved HTML reviewer exposes Stage D results and source evidence. Human extraction evals,
 new specialists and unbounded evidence broadening remain later work.
 
 ## Source Documents
@@ -201,7 +202,21 @@ and events; join item IDs to original text/pages/table cells/heading context.
 Current B2/B3 review uses final citations; historical unmarked runs retain
 old B2 saved rule matches and B3/B4 labels, and
 unclassified chunks stay visible. Never substitute sample data or infer
-unrecorded substep progress. The live progress dashboard remains parked.
+unrecorded substep progress.
+
+The local `workbench.py` / `workbench.html` now runs real A/B/D jobs and reuses
+the read-only reviewer. Launch with `uv run --no-sync python -m
+credit_agreement_extractor.workbench --port 60900`; open `http://127.0.0.1:60900`.
+Only registered corpus PDFs are accepted. One background document job and an
+exclusive controller lock prevent competing execution/restart recovery.
+Launch requires a same-origin token-bearing POST; selection/polling never starts
+work. UI defaults are B2 Flash/medium, D2 Pro/high, A10/debug on. The general C
+configuration is unchanged. Source files and human labels remain untouched.
+Actual A1–A11 boundaries, including cache/format/hierarchy skips, feed progress;
+A5/A6 configure, A8 converts. Never fabricate Docling per-page percentages.
+Saved layouts keep historical stage IDs; live debug-off events still refresh.
+Artifacts, model attempts, D3 diagnostics and original cited source pages are
+inspectable. Never expose credentials or hidden reasoning. Phoenix remains deferred.
 
 - `docs/conversion_pipeline.md` is the authoritative architecture and status diagram.
 - `docs/build_backlog.md` is the registry for agreed but unimplemented components.

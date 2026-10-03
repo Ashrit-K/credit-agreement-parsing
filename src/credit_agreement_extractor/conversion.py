@@ -13,7 +13,7 @@ import hashlib
 import json
 import shutil
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -21,7 +21,7 @@ from tempfile import TemporaryDirectory
 from typing import Any, Iterator, Protocol
 
 from .hierarchy import build_hierarchy_sidecar
-from .tracing import traced
+from .tracing import current_trace, trace_step, traced
 
 
 class InvalidDocumentInputError(ValueError):
@@ -241,20 +241,24 @@ def _normalized_source(
     into memory solely to unwrap its transport compression.
     """
     if source_format != "html" or not _has_gzip_header(path):
+        if current_trace() is not None:
+            current_trace().event('stage_skipped', {'stage': 'A7', 'status': 'skipped', 'reason': 'not_gzip_html'})
         yield path, False
         return
 
     with TemporaryDirectory(prefix=".normalizing-", dir=temporary_root) as directory:
         normalized_path = Path(directory) / "source.html"
-        try:
-            with gzip.open(path, "rb") as compressed, normalized_path.open(
-                "wb"
-            ) as output:
-                shutil.copyfileobj(compressed, output)
-        except (gzip.BadGzipFile, EOFError) as error:
-            raise InvalidDocumentInputError(
-                f"HTML file has a gzip signature but cannot be decompressed: {path}"
-            ) from error
+        with trace_step('A7', {'source_path': path}) as record:
+            try:
+                with gzip.open(path, "rb") as compressed, normalized_path.open(
+                    "wb"
+                ) as output:
+                    shutil.copyfileobj(compressed, output)
+            except (gzip.BadGzipFile, EOFError) as error:
+                raise InvalidDocumentInputError(
+                    f"HTML file has a gzip signature but cannot be decompressed: {path}"
+                ) from error
+            record({'normalized_path': normalized_path, 'gzip_normalized': True})
         yield normalized_path, True
 
 
@@ -278,49 +282,83 @@ def convert_document(
     Set use_hierarchy=False for three artifacts and a None hierarchy path.
     Separate mode directories prevent an ablation from replacing old results.
     """
-    if type(use_hierarchy) is not bool:
-        raise ValueError("use_hierarchy must be a boolean.")
-    path, source_format = _validate_source_path(source_path)
-    source_sha256 = _sha256(path)
-    root = Path(output_root).expanduser()
-    artifact = _artifact_paths(
-        source_path=path,
-        source_sha256=source_sha256,
-        source_format=source_format,
-        output_root=root,
-        cached=False,
-        use_hierarchy=use_hierarchy,
-    )
-
-    if _is_complete_cache(artifact):
-        return replace(artifact, cached=True)
+    with trace_step('A1', {'source_path': source_path, 'use_hierarchy': use_hierarchy}) as record:
+        if type(use_hierarchy) is not bool:
+            raise ValueError("use_hierarchy must be a boolean.")
+        path, source_format = _validate_source_path(source_path)
+        record({'source_path': path, 'source_format': source_format, 'use_hierarchy': use_hierarchy})
+    with trace_step('A2', {'source_path': path, 'output_root': output_root}) as record:
+        source_sha256 = _sha256(path)
+        root = Path(output_root).expanduser()
+        artifact = _artifact_paths(
+            source_path=path,
+            source_sha256=source_sha256,
+            source_format=source_format,
+            output_root=root,
+            cached=False,
+            use_hierarchy=use_hierarchy,
+        )
+        # These are prospective paths, not validated generated artifacts yet.
+        record(asdict(artifact))
+    with trace_step('A3', {'artifact': asdict(artifact)}) as record:
+        cache_complete = _is_complete_cache(artifact)
+        record({'cache_complete': cache_complete})
+    if cache_complete:
+        with trace_step('A3.1', {'artifact': asdict(artifact)}) as record:
+            cached_artifact = replace(artifact, cached=True)
+            record(cached_artifact)
+        if current_trace() is not None:
+            current_trace().event('cache_hit', {'stage': 'A3.1', 'source_sha256': source_sha256})
+            for stage in ('A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10', 'A11'):
+                current_trace().event('stage_skipped', {'stage': stage, 'status': 'skipped', 'reason': 'cache_hit'})
+        return cached_artifact
+    if current_trace() is not None:
+        current_trace().event('stage_skipped', {'stage': 'A3.1', 'status': 'skipped', 'reason': 'cache_miss'})
 
     artifact.output_directory.mkdir(parents=True, exist_ok=True)
     # A stale completed manifest must never survive a regeneration attempt. If
     # conversion or A10 fails below, the absence of this final marker makes the
     # incomplete directory unambiguously unusable as a cache entry.
     artifact.manifest_path.unlink(missing_ok=True)
-    active_converter = converter if converter is not None else _default_converter()
+    with trace_step('A4', {'source_format': source_format}) as record:
+        setup_stage = 'A5' if source_format == 'pdf' else 'A6'
+        record({'source_format': source_format, 'setup_stage': setup_stage})
+        if current_trace() is not None:
+            current_trace().event('stage_skipped', {
+                'stage': 'A6' if source_format == 'pdf' else 'A5',
+                'status': 'skipped', 'reason': 'unselected_format'})
+    with trace_step(setup_stage, {'source_format': source_format, 'injected_converter': converter is not None}) as record:
+        active_converter = converter if converter is not None else _default_converter()
+        record({'converter_type': type(active_converter).__name__, 'source_format': source_format})
     with _normalized_source(
         path,
         source_format=source_format,
         temporary_root=root,
     ) as (converter_source, gzip_normalized):
-        conversion_result = active_converter.convert(converter_source)
-        markdown = conversion_result.document.export_to_markdown()
-        canonical = conversion_result.document.export_to_dict()
+        with trace_step('A8', {'converter_source': converter_source, 'gzip_normalized': gzip_normalized}) as record:
+            conversion_result = active_converter.convert(converter_source)
+            markdown = conversion_result.document.export_to_markdown()
+            canonical = conversion_result.document.export_to_dict()
+            record({'canonical': canonical, 'markdown': markdown})
 
-    artifact.markdown_path.write_text(markdown, encoding="utf-8")
-    artifact.docling_json_path.write_text(
-        json.dumps(canonical, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    with trace_step('A9', {'canonical': canonical, 'markdown': markdown}) as record:
+        artifact.markdown_path.write_text(markdown, encoding="utf-8")
+        artifact.docling_json_path.write_text(
+            json.dumps(canonical, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        record({'markdown_path': artifact.markdown_path, 'docling_json_path': artifact.docling_json_path,
+                'canonical': canonical, 'markdown': markdown})
     # Genuine A10 bypass: no sidecar builder, heading stack or warning pass.
     hierarchy = None
     if use_hierarchy:
-        hierarchy = build_hierarchy_sidecar(canonical, source_sha256=source_sha256)
-        artifact.hierarchy_json_path.write_text(
-            json.dumps(hierarchy, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        with trace_step('A10', {'canonical': canonical, 'source_sha256': source_sha256}) as record:
+            hierarchy = build_hierarchy_sidecar(canonical, source_sha256=source_sha256)
+            artifact.hierarchy_json_path.write_text(
+                json.dumps(hierarchy, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            record(hierarchy)
+    elif current_trace() is not None:
+        current_trace().event('stage_skipped', {'stage': 'A10', 'status': 'skipped', 'reason': 'hierarchy_disabled'})
     sidecar_metadata = {"enabled": False, "status": "disabled"}
     if hierarchy is not None:
         sidecar_metadata = {
@@ -370,8 +408,10 @@ def convert_document(
             "hierarchy_json": artifact.hierarchy_json_path.name if use_hierarchy else None,
         },
     }
-    artifact.manifest_path.write_text(
-        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    return artifact
+    with trace_step('A11', {'manifest': manifest}) as record:
+        artifact.manifest_path.write_text(
+            json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        record(artifact)
+        return artifact

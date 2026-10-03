@@ -84,9 +84,44 @@ Completed results and manifest-last provenance persist under
 even when a run ID is reused. `tmp/runs/<run-id>/events.jsonl` always records basic
 telemetry; debug additionally saves evidence, prompts, visible responses and
 validation errors. Artifact paths appear in the `extraction_artifact` event.
-The HTML reviewer does not yet render Stage D; inspect its JSON/debug files.
+The HTML reviewer and local workbench render Stage D results with original cited evidence.
 
 Design and build steps: [Stage D plan](docs/superpowers/plans/2026-10-03-stage-d-extraction.md).
+
+## Local pipeline workbench
+
+```bash
+uv run --no-sync python -m credit_agreement_extractor.workbench --port 60900
+```
+
+Open [the local workbench](http://127.0.0.1:60900). Select a preserved corpus PDF,
+then explicitly press **Run pipeline · uses API**. An OpenCode key must already
+be configured in the ignored `.env`; starting a run can incur model charges.
+Selecting a saved run, refreshing or inspecting artifacts never calls a model.
+
+- One document job at a time, with B2's existing batch concurrency of five.
+- Independent controls: B2 DeepSeek V4 Flash/medium; D2 DeepSeek V4 Pro/high.
+  D2 makes one combined extraction call, with at most two sequential attempts.
+  Python Stage D APIs also default to Pro/high; general Stage C defaults are unchanged.
+- A10 and debug captures default on. Basic events persist with debug off, but
+  uncaptured intermediate contents are explicitly unavailable.
+- Connected A/B/D component buttons show actual started/completed/cached/skipped/
+  failed status. A5/A6 configure the converter; A8 runs conversion. Cache hits
+  skip, rather than replay, A4–A11. Batch counts do not pretend to be provider progress.
+- Inspect inputs, outputs, readable JSON/Markdown, model exchanges, validation
+  diagnostics, retrieved evidence and final extraction. Citation buttons open
+  the original PDF page. Topics reuse the real saved-run reviewer.
+- Historical runs retain their original numbering. Unrecorded substeps remain
+  unrecorded. Controller restart marks unfinished owned jobs interrupted.
+
+The standard-library server binds only `127.0.0.1`, accepts registered PDF IDs
+instead of arbitrary paths, validates launch origin/token, and holds an exclusive
+controller lock. It is a local debug tool, not a deployed multi-user service.
+Outputs stay under `tmp/`, outside immutable `raw_documents/`; ground-truth labels
+are never supplied to the pipeline. No new frontend/Python dependency is required.
+
+[Workbench design](docs/superpowers/specs/2026-10-04-pipeline-workbench-design.md)
+and [build plan](docs/superpowers/plans/2026-10-04-pipeline-workbench.md).
 
 ## Requirements
 
@@ -410,8 +445,9 @@ uv run --no-sync python -m credit_agreement_extractor.review \
 Open the exported HTML in a browser. It is self-contained, uses only that run's
 saved debug outputs, and makes no LLM calls. Export again to refresh newer logs.
 Source text is the converter's wording, not a new transcription of the PDF;
-Stage A substeps were not separately traced in this run. No live job-launch UI
-or reviewer-label persistence is included. Runs need `debug=True` to capture
+Stage A substeps were not separately traced in this historical run. New runs
+record actual A1–A11 boundaries in the workbench; the standalone export stays
+read-only and does not persist review labels. Runs need `debug=True` to capture
 the content needed for inspection.
 
 ## Human topic annotation

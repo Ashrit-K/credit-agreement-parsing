@@ -10,6 +10,14 @@ import pytest
 from credit_agreement_extractor.review import export_run_review, load_run_review, build_topic_review, build_stage_review
 
 
+def test_controller_recorded_layout_survives_d_only_history():
+    from credit_agreement_extractor.review import review_layout
+    assert review_layout({'job': {'pipeline_layout': 'stage-b-v2'},
+                          'events': [], 'snapshots': []}) == 'stage-b-v2'
+    assert review_layout({'job': {'pipeline_layout': None},
+                          'events': [], 'snapshots': []}) == 'historical'
+
+
 def saved_run(tmp_path):
     run = tmp_path / 'review-1'
     (run / 'debug').mkdir(parents=True)
@@ -27,6 +35,54 @@ def test_loads_logged_events_and_allowlisted_snapshots(tmp_path):
     assert data['snapshots'][0]['data']['topics'] == {'covenants':[]}
     assert len(data['snapshots']) == 1
     assert data['run_id'] == 'review-1'
+
+
+def test_review_loads_current_extraction_and_conversion_substeps(tmp_path):
+    run = saved_run(tmp_path)
+    for stage in ('A9', 'A3.1', 'B5', 'D1', 'D2', 'D3', 'D4'):
+        (run/'debug'/f'{stage}-output-one.json').write_text(json.dumps({'stage': stage}))
+    data = load_run_review('review-1', trace_root=tmp_path)
+    stages = build_stage_review(data)
+    assert stages['D4']['return_value']['stage'] == 'D4'
+    assert stages['A9']['return_value']['stage'] == 'A9'
+    assert stages['B5']['return_value']['stage'] == 'B5'
+
+
+def test_extraction_model_exchanges_are_paired_by_attempt(tmp_path):
+    from credit_agreement_extractor.review import build_model_exchanges
+    data = {'pipeline_layout': 'stage-b-v2', 'snapshots': [
+        {'filename': 'D2-request-a.json', 'data': {'attempt_id': 'a'}},
+        {'filename': 'D2-request-b.json', 'data': {'attempt_id': 'b'}},
+        {'filename': 'D2-response-b.json', 'data': {'attempt_id': 'b'}},
+        {'filename': 'D2-response-a.json', 'data': {'attempt_id': 'a'}}]}
+    results = build_model_exchanges(data)
+    assert [(r['request'], r['response']) for r in results] == [
+        ('D2-request-a.json', 'D2-response-a.json'),
+        ('D2-request-b.json', 'D2-response-b.json')]
+
+
+def test_real_d2_trace_identity_and_validation_diagnostics(tmp_path):
+    from credit_agreement_extractor.review import build_model_exchanges
+    run = saved_run(tmp_path)
+    (run/'debug'/'D3-validation-a.json').write_text(json.dumps({'_trace': {'attempt_id': 'a'}, 'errors': ['bad citation']}))
+    assert any(s['filename']=='D3-validation-a.json' for s in load_run_review('review-1',trace_root=tmp_path)['snapshots'])
+    data = {'pipeline_layout':'stage-b-v2', 'snapshots': [
+        {'filename': 'D2-request-a.json', 'data': {'_trace': {'attempt_id':'a'}}},
+        {'filename': 'D2-request-b.json', 'data': {'_trace': {'attempt_id':'b'}}},
+        {'filename': 'D2-response-b.json', 'data': {'_trace': {'attempt_id':'b'}}},
+        {'filename': 'D3-validation-a.json', 'data': {'_trace': {'attempt_id':'a'}}},
+        {'filename': 'D2-response-a.json', 'data': {'_trace': {'attempt_id':'a'}}}]}
+    rows=build_model_exchanges(data)
+    assert rows[0]['response']=='D2-response-a.json' and rows[0]['error']=='D3-validation-a.json'
+
+
+def test_extraction_only_review_renders_without_topic_classifications(tmp_path):
+    run = saved_run(tmp_path)
+    result = {'parties': [], 'source_evidence': {'#/texts/1': {'text': 'Actual borrower', 'pages': [1]}}}
+    (run/'debug'/'D1-output-one.json').write_text(json.dumps(result))
+    html = export_run_review('review-1', tmp_path/'d.html', trace_root=tmp_path).read_text()
+    assert 'Actual borrower' in html
+    assert 'Extraction result' in html
 
 
 def test_rejects_path_traversal(tmp_path):
@@ -385,13 +441,15 @@ def test_current_stage_details_do_not_expose_stale_heuristic_snapshots():
     assert not stages['B2']['output']
 
 
-@pytest.mark.parametrize('current', [True, False])
+@pytest.mark.parametrize('current', [True, False, None])
 def test_javascript_renders_layout_controls_and_evidence(current):
     """Execute the standalone script with a small DOM, without dependencies."""
     node = shutil.which('node')
     if node is None:
         pytest.skip('Node is unavailable for the standalone JavaScript check.')
     data = current_snapshots() if current else passage_snapshots()
+    if current is None:
+        data = {'pipeline_layout': 'stage-b-v2', 'snapshots': [], 'events': []}
     data.update(run_id='disposable', pipeline_layout=review_module.review_layout(data))
     data['review'] = build_topic_review(data)
     data['stages'] = build_stage_review(data)
@@ -414,15 +472,18 @@ const document={body:new Element(),getElementById(id){if(!elements.has(id))eleme
 document.getElementById('run-data').textContent=JSON.stringify(INPUT);
 '''
     checks = r'''
-function visible(element){return [element.textContent,...element.children.map(visible)].join(' ')}
+function visible(element){return [element.textContent,...(element.children||[]).map(visible)].join(' ')}
 const initial={controls:document.getElementById('stage').options.map(o=>o.textContent),source:visible(document.getElementById('source')),results:visible(document.getElementById('classification'))};
-stage='B2';selected=null;render();initial.classification=visible(document.getElementById('classification'));
+stage='B2';selected=null;render();initial.classification=visible(document.getElementById('classification'));initial.classificationSource=visible(document.getElementById('source'));
 if(currentLayout){stage='B4';render();initial.pending=visible(document.getElementById('source'));stage='B1';topic='__all';selected=null;render();initial.chunk=visible(document.getElementById('source'))}
 console.log(JSON.stringify(initial));
 '''
     result = subprocess.run([node, '-'], input='const INPUT='+json.dumps(data)+';\n'+harness+script+checks,
                             text=True, capture_output=True, check=True)
     rendered = json.loads(result.stdout)
+    if current is None:
+        assert 'No source classification captured' in rendered['classificationSource']
+        return
     assert 'Interest payable in arrears.' in rendered['source']
     if current:
         assert 'B2 · LLM classifications' in rendered['controls']
@@ -431,7 +492,7 @@ console.log(JSON.stringify(initial));
         assert 'B2 selected this passage group; B3 indexes' in rendered['results']
         assert 'B2 proposals' not in rendered['results']
         assert 'B2 proposals' not in rendered['classification']
-        assert 'B4 is not implemented' in rendered['pending']
+        assert 'No output recorded for this run.' in rendered['pending']
         assert 'Interest payable in arrears.' in rendered['chunk']
     else:
         assert 'B3 selected this passage group; B4 indexes' in rendered['results']

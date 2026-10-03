@@ -21,7 +21,7 @@ def review_layout(data: dict) -> str:
             return (value.get('pipeline_layout') == 'stage-b-v2'
                     or value.get('profile', {}).get('pipeline_layout') == 'stage-b-v2')
         return False
-    if data.get('pipeline_layout') == 'stage-b-v2':
+    if data.get('pipeline_layout') == 'stage-b-v2' or marked(data.get('job')):
         return 'stage-b-v2'
     if any(event.get('stage') in ('B2', 'B3')
            and event.get('event') == 'pipeline_layout' and marked(event)
@@ -56,7 +56,7 @@ def load_run_review(run_id: str, *, trace_root: str | Path = 'tmp/runs') -> dict
     # Avoid interpreting user-supplied paths in snapshot payloads as files to
     # read. Only the already-captured JSON files are loaded, in capture order.
     for path in sorted(debug.glob('*.json'), key=lambda p: (p.stat().st_mtime_ns, p.name)):
-        if not re.match(r'^(?:A|B[1-4]|C)-(?:input|output|request|response|final|validation-error)', path.name):
+        if not re.match(r'^(?:A(?:[1-9]|10|11|3\.1)?|B[1-6]|C|D[1-4])-(?:input|output|request|response|final|validation|evidence|manifest)', path.name):
             continue
         if path.is_symlink():
             raise ValueError('Debug snapshots must not be symbolic links.')
@@ -68,6 +68,19 @@ def export_run_review(run_id: str, destination: str | Path, *,
                       trace_root: str | Path = 'tmp/runs') -> Path:
     """Embed actual captured data, escaping HTML script delimiters safely."""
     data = load_run_review(run_id, trace_root=trace_root)
+    target = Path(destination)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(render_run_review(data), encoding='utf-8')
+    return target
+
+
+def render_run_review(data: dict) -> str:
+    """Render a trace-backed projection, also accepting an unfinished live run.
+
+    The controller owns safe file reading; this function does not follow paths
+    from logs and never changes the original saved snapshot objects.
+    """
+    data = {**data, 'snapshots': list(data.get('snapshots', []))}
     data['pipeline_layout'] = review_layout(data)
     data['review'] = build_topic_review(data)
     data['stages'] = build_stage_review(data)
@@ -81,7 +94,7 @@ def export_run_review(run_id: str, destination: str | Path, *,
         name = snapshot['filename']
         classification = 'B2' if data['pipeline_layout'] == 'stage-b-v2' else 'B3'
         if name.startswith(tuple(classification + suffix for suffix in
-                                ('-request-', '-response-', '-validation-error-')) + ('C-request-', 'C-response-')):
+                                ('-request-', '-response-', '-validation-error-')) + ('C-request-', 'C-response-', 'D2-request-', 'D2-response-', 'D3-validation-')):
             compact.append(snapshot)
         elif name.startswith('A-output-artifacts-'):
             compact.append({'filename':name, 'data':{
@@ -92,10 +105,7 @@ def export_run_review(run_id: str, destination: str | Path, *,
     # there, so escape '<' as well as '&' and '>' before embedding source text.
     encoded = encoded.replace('&', r'\u0026').replace('<', r'\u003c').replace('>', r'\u003e')
     template = Path(__file__).with_name('review.html').read_text()
-    target = Path(destination)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(template.replace('__RUN_DATA__', encoded), encoding='utf-8')
-    return target
+    return template.replace('__RUN_DATA__', encoded)
 
 
 def build_model_exchanges(data: dict) -> list[dict]:
@@ -107,20 +117,27 @@ def build_model_exchanges(data: dict) -> list[dict]:
     Filename references avoid duplicating large model payloads in the export.
     """
     snapshots = data.get('snapshots', [])
-    stage = 'B2' if review_layout(data) == 'stage-b-v2' else 'B3'
+    classification_stage = 'B2' if review_layout(data) == 'stage-b-v2' else 'B3'
     exchanges = []
     for index, request in enumerate(snapshots):
-        if not request['filename'].startswith(stage + '-request-'):
+        stage = request['filename'].split('-request-', 1)[0]
+        if stage not in (classification_stage, 'D2') or '-request-' not in request['filename']:
             continue
         metadata = request['data']
-        attempt_id = metadata.get('attempt_id')
+        identity = {**metadata.get('_trace', {}), **metadata}
+        attempt_id = identity.get('attempt_id')
 
         def matches(snapshot):
-            other = snapshot['data']
+            # Ordinary stage outputs can be lists, not attempt envelopes.
+            # Only identity-bearing objects can match a model exchange.
+            payload = snapshot['data']
+            if not isinstance(payload, dict):
+                return False
+            other = {**payload.get('_trace', {}), **payload}
             if attempt_id:
                 return other.get('attempt_id') == attempt_id
             return (other.get('batch_id'), other.get('attempt')) == (
-                metadata.get('batch_id'), metadata.get('attempt'))
+                identity.get('batch_id'), identity.get('attempt'))
 
         response = error = None
         for snapshot in snapshots[index + 1:]:
@@ -131,7 +148,8 @@ def build_model_exchanges(data: dict) -> list[dict]:
                 break
             if name.startswith(stage + '-response-') and response is None:
                 response = name
-            if name.startswith(stage + '-validation-error-') and error is None:
+            if (name.startswith(stage + '-validation-error-') or
+                (stage == 'D2' and name.startswith('D3-validation-'))) and error is None:
                 error = name
         exchanges.append({'request': request['filename'],
                           'response': response, 'error': error})
@@ -147,7 +165,9 @@ def build_stage_review(data: dict) -> dict:
     """
     result = {}
     current = review_layout(data) == 'stage-b-v2'
-    for stage in ('A', 'B1', 'B2', 'B3', 'B4', 'C'):
+    for stage in ('A', 'A1', 'A2', 'A3', 'A3.1', 'A4', 'A5', 'A6', 'A7',
+                  'A8', 'A9', 'A10', 'A11', 'B1', 'B2', 'B3', 'B4', 'B5',
+                  'C', 'D1', 'D2', 'D3', 'D4'):
         def last(prefix):
             found = [s['data'] for s in data['snapshots']
                      if s['filename'].startswith(prefix + '-')

@@ -106,6 +106,45 @@ def current_trace():
     return _ACTIVE.get()
 
 
+@contextmanager
+def trace_step(stage, inputs=None):
+    """Trace an actual synchronous substep inside the current public call.
+
+    The yielded callable records the output while its producing span is active.
+    Without an active run this is deliberately a no-op, never a new run.
+    """
+    trace = current_trace()
+    if trace is None:
+        yield lambda output: None
+        return
+    parent_span = _SPAN.get()
+    span_token = _SPAN.set(uuid4().hex)
+    context_token = _CONTEXT.set({**_CONTEXT.get(), 'stage': stage})
+    started = time.monotonic()
+
+    def record(output):
+        trace.snapshot(stage + '-output', output)
+        trace.artifact_snapshot(stage + '-output-artifacts', output)
+
+    try:
+        trace.event('stage_started', {'stage': stage, 'parent_span_id': parent_span})
+        trace.snapshot(stage + '-input', inputs)
+        values = inputs.values() if isinstance(inputs, dict) else (inputs,)
+        for value in values:
+            trace.artifact_snapshot(stage + '-input-artifacts', value)
+        yield record
+        trace.event('stage_finished', {'stage': stage, 'status': 'completed',
+                                      'latency_seconds': time.monotonic() - started})
+    except Exception as error:
+        trace.event('stage_finished', {'stage': stage, 'status': 'failed',
+                                      'error_type': type(error).__name__,
+                                      'latency_seconds': time.monotonic() - started})
+        raise
+    finally:
+        _SPAN.reset(span_token)
+        _CONTEXT.reset(context_token)
+
+
 def summarize_run(run_id: str, *, trace_root='tmp/runs', debug=False):
     """Read local analytics; unknown usage/cost is explicitly counted.
 

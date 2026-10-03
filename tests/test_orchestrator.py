@@ -18,7 +18,7 @@ def artifacts(tmp_path):
 
 
 class FakeClient:
-    def __init__(self, responses=None, model='test-model'):
+    def __init__(self, responses=None, model='deepseek-v4-pro'):
         self.settings = SimpleNamespace(model=model)
         self.responses = responses or [answer()]
         self.calls = []
@@ -97,7 +97,7 @@ def test_bounded_failure_does_not_finalize(tmp_path, error):
 
 
 def test_invalid_json_retries_only_twice(tmp_path):
-    response = LlmResponse('not JSON', 'test-model', 'responses', {}, 0, {})
+    response = LlmResponse('not JSON', 'deepseek-v4-pro', 'responses', {}, 0, {})
     client = FakeClient([response])
     with pytest.raises(ValueError): run(tmp_path, client)
     assert len(client.calls) == 2
@@ -113,7 +113,7 @@ def test_auth_and_model_substitution_stop_immediately(tmp_path):
 
 
 def test_requested_api_style_is_checked_and_effective_style_saved(tmp_path):
-    wrong = FakeClient([LlmResponse(json.dumps(answer()), 'test-model', 'responses', {}, 0, {})])
+    wrong = FakeClient([LlmResponse(json.dumps(answer()), 'deepseek-v4-pro', 'responses', {}, 0, {})])
     with pytest.raises(LlmError, match='API'): run(tmp_path, wrong, api_style='chat_completions')
     assert len(wrong.calls) == 1
     run(tmp_path, FakeClient(), api_style='responses')

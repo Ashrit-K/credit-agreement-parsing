@@ -46,7 +46,7 @@ class CreditTermSpecialist:
     """A retrieval tool plus one combined model request, with bounded recovery."""
 
     @traced('D2')
-    def run(self, retrieve, *, client=None, model=None, reasoning_effort='medium',
+    def run(self, retrieve, *, client=None, model='deepseek-v4-pro', reasoning_effort='high',
             api_style=None, debug=False, run_id=None, trace_root='tmp/runs'):
         packet = retrieve()
         trace = current_trace()
@@ -60,7 +60,9 @@ class CreditTermSpecialist:
                 issues=['No mapped evidence found for requested extraction topics.']), set())
             return result, packet, items, None, None
         live = client if client is not None else OpenCodeClient()
-        selected_model = model or getattr(getattr(live, 'settings', None), 'model', None) or 'gpt-5.6-luna'
+        # D owns its starting model independently of the general C/.env default.
+        # An explicit None still means D's default, never a silent provider switch.
+        selected_model = model or 'deepseek-v4-pro'
         request = {'evidence': packet, 'output_schema': CreditTerms.model_json_schema()}
         options = dict(model=selected_model, reasoning_effort=reasoning_effort,
                        api_style=api_style, debug=debug, run_id=run_id, trace_root=trace_root)

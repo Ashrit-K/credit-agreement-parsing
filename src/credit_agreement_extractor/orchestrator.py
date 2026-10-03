@@ -41,7 +41,7 @@ def _persist(result, packet, *, output_root, model, reasoning_effort, api_style)
 @traced('D1')
 def extract_credit_terms(topic_map: TopicMapArtifact, chunks: ChunkArtifact, *,
                          conversion: ConversionArtifact | None = None, client=None,
-                         model=None, reasoning_effort='medium', api_style=None,
+                         model='deepseek-v4-pro', reasoning_effort='high', api_style=None,
                          output_root: str | Path = 'tmp/stage_d', debug=False,
                          run_id=None, trace_root='tmp/runs') -> dict:
     """Extract the three agreed families from a completed, bound topic map.

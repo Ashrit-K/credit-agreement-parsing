@@ -20,6 +20,7 @@ component IDs match the authoritative diagram in
 
 | ID | Status | Component | Frozen outcome | Dependencies | Implementation plan |
 | --- | --- | --- | --- | --- | --- |
+| Pipeline workbench | Implemented | Local execution and debug HTML | Corpus PDF selection, one live job, trace-backed A/B/D component status, saved run switching, actual intermediate inputs/outputs and readable source/citations; independent model/effort controls, no fabricated progress. D2 defaults DeepSeek V4 Pro/high. | Runner, local traces, saved reviewer | [Workbench plan](superpowers/plans/2026-10-04-pipeline-workbench.md) |
 | A5 | Implemented | Docling PDF conversion pipeline | Run local English OCR, enable Docling's built-in heading-hierarchy inference and parsed-page generation, and record the configuration in the conversion profile and manifest. Do not add a custom document-layout parser. | A4 document format router | [A10 hierarchy-sidecar plan](superpowers/plans/2026-09-29-a10-hierarchy-sidecar.md), Task 1 |
 | A10 | Implemented | Build versioned hierarchy sidecar mapping | Transform unchanged canonical Docling JSON into a schema-versioned mapping keyed by canonical item IDs, with generic heading paths, page provenance, and the four frozen warning codes. Preserve source content and reading order; treat broken references and cycles as errors. | A5 and A9 canonical output | [A10 hierarchy-sidecar plan](superpowers/plans/2026-09-29-a10-hierarchy-sidecar.md), Task 2 |
 | A11 | Implemented | Persist sidecar and finalize Stage A artifact | Call A10 by default after canonical serialization; retain explicit opt-out. Finalize the manifest after all mode-required artifacts exist, return a nullable hierarchy path, and validate mode-aware caches. | A9; optional A10 | [A10 hierarchy-sidecar plan](superpowers/plans/2026-09-29-a10-hierarchy-sidecar.md), Tasks 3-4 |
@@ -40,7 +41,7 @@ component IDs match the authoritative diagram in
 | B4/B5 visual topic explorer | Deferred | Human-readable topic-map visualization | Use B3 structure, B4 selections and B5 source text/provenance without new classification. Current saved-run HTML remains unchanged. | B4/B5 packets | — |
 | Observability: Phoenix | Deferred | Trace UI | Revisit later; no classification/map dependency. | Local telemetry | — |
 | Human topic annotation | Implemented | Golden passage label editor | Approved source queue, durable human saves/reload/export; human labels excluded from pipeline inputs. | Stage A | [Annotation plan](superpowers/plans/2026-10-01-human-topic-annotation.md) |
-| Human review HTML | Implemented | Saved-run reviewer | Current A/B1–B3/C review and original historical stage labels, using actual saved source evidence and attempt identities. Live dashboard remains deferred. | Debug snapshots | [Simplification plan](superpowers/plans/2026-10-02-stage-b-simplification.md) |
+| Human review HTML | Implemented | Saved-run reviewer | Current A/B1–B5/C/D review and original historical stage labels, using actual saved source evidence and attempt identities. Local execution workbench now complements this read-only view. | Debug snapshots | [Simplification plan](superpowers/plans/2026-10-02-stage-b-simplification.md) |
 | Telemetry restart correlation | Pending | Distinguish executions within one run ID | Correlate failures with exact call/span across run restarts. | Local events | — |
 
 Current registry IDs use `stage-b-v2`. Historical unmarked runs and the
@@ -52,6 +53,25 @@ Saved plans/reports remain history. The 011 ablations motivate this simplificati
 but do not prove a universal improvement or isolate stochastic/packing effects.
 
 ## Verification evidence
+
+### Local pipeline workbench — 2026-10-04
+
+- Repurposed the actual saved reviewer inside a loopback execution shell: corpus
+  PDF picker, independent model controls, one background job, current/historical
+  run switching, connected A/B/D progress and source/citation inspection.
+- Debug shows recorded inputs/outputs, Markdown/JSON, model exchanges, B4/B5
+  original evidence, D3 retry diagnostics and final D results. Basic mode keeps
+  events; missing captures are explicitly unavailable. No illustrative data.
+- Actual A1–A11 traces preserve cache semantics; cache hits skip conversion steps.
+  Exclusive process ownership, registered paths and same-origin launch checks
+  prevent competing controllers and arbitrary-path execution.
+- D2 defaults Pro/high, still one combined call; UI B2 defaults Flash/medium.
+  No paid requests during this build. Model-selection extraction evals remain pending.
+- Verification: 410 working-tree tests passed, including a real offline A/B/D
+  integration with provider/converter test doubles; browser checked saved 011
+  extraction, original PDF page links and current/historical run views. Independent
+  re-review found no remaining important defects. The exact staged snapshot passed
+  390 tests, independently of unrelated work; the staged credential scan passed.
 
 ### Stage D orchestrated extraction — 2026-10-04
 
