@@ -34,7 +34,9 @@ component IDs match the authoritative diagram in
 | B2/B3 passage contract simplification | Deferred | Consider topic-specific item groups without evidence/context roles | Evaluate grouped `item_ids` against context interpretation, retrieval and historical compatibility before approval. Keep current roles unchanged. | B2/B3, evaluations | Backlog-only deferral on 2026-10-02; originally named B3/B4 |
 | C1–C6 | Implemented | Shared OpenCode transport | Responses/Chat/Qwen Messages adapters, xhigh forwarding, overrides, normalized cache accounting and reasoning-safe telemetry; model defaults unchanged. | Credentials | Historical [transport plan](superpowers/plans/2026-10-01-b3-topic-reflection.md) |
 | B4/B5 | Implemented | Strict topic retrieval and evidence packaging | `retrieve_evidence()` validates approved topic IDs and map/B1 fingerprints, retrieves all exact groups, resolves original evidence/context and table cells with verified provenance, and persists request-specific packets with traces. No resolver LLM, ranking or question filtering. | B3, B1; matching Stage A for tables | [Implementation plan](superpowers/plans/2026-10-03-b4-b5-evidence-retrieval.md) |
-| D1 | Pending | Abstract downstream extraction | Downstream component chooses approved topic IDs, uses B4/B5 evidence, extracts requested structured values and validates citations; agent/sleeve topology and field schemas remain open. Supersedes older detailed pending D view. | B4/B5, C | — |
+| D1–D4 | Implemented | Orchestrated parties, facilities and interest extraction | One public fixed-Python orchestrator coordinates one specialist with B4/B5 tools; validates the agreed cited JSON, entity references and decimal-rate arithmetic; persists complete results and debug traces. B3 completion hands off directly, with no orchestration LLM. | B3 readiness; B4/B5, C | [Stage D plan](superpowers/plans/2026-10-03-stage-d-extraction.md) |
+| Stage D extraction evaluations | Pending | Human-reviewed field-level reference and error analysis | Compare completed independent extractions with human-authored correct values and supporting source; never supply reference answers to any pipeline/model stage. Test varied agreements before an accuracy claim. | D1–D4, human review | — |
+| Stage D richer retrieval/rate policies | Deferred | Additional specialists, field-level citations and conditional calculations | Evaluate targeted evidence broadening, per-attribute citations, negative benchmark rates, pricing-grid applicability and complex formulas before expanding the bounded initial specialist. | D extraction evaluations | — |
 | B4/B5 visual topic explorer | Deferred | Human-readable topic-map visualization | Use B3 structure, B4 selections and B5 source text/provenance without new classification. Current saved-run HTML remains unchanged. | B4/B5 packets | — |
 | Observability: Phoenix | Deferred | Trace UI | Revisit later; no classification/map dependency. | Local telemetry | — |
 | Human topic annotation | Implemented | Golden passage label editor | Approved source queue, durable human saves/reload/export; human labels excluded from pipeline inputs. | Stage A | [Annotation plan](superpowers/plans/2026-10-01-human-topic-annotation.md) |
@@ -50,6 +52,41 @@ Saved plans/reports remain history. The 011 ablations motivate this simplificati
 but do not prove a universal improvement or isolate stochastic/packing effects.
 
 ## Verification evidence
+
+### Stage D orchestrated extraction — 2026-10-04
+
+- Fixed D1 orchestration, one D2 specialist for parties/facilities/interest-fees,
+  D3 schema/citation/reference/arithmetic checks, D4 unique result and manifest-last
+  completion. `run_pipeline` triggers D only after successful B3; standalone B3
+  remains unchanged. Models/efforts can be overridden separately for B2 and D.
+- 54 focused tests cover numeric fractions, parent-child role separation,
+  status/citation/entity checks, deterministic totals, unresolved pricing inputs,
+  bounded failures/retries, model/style identity, cost failure attribution,
+  manifest persistence, source tables, both A10 modes and readiness handoff.
+  Full local suite: 372 passed (includes unrelated working changes).
+- Independent review reproduced uncited facilities, parent roles in agreement
+  roles and uncertain-total arithmetic gaps; second review found unresolved
+  calculation-input promotion and substitution telemetry gaps. Each has a
+  failing-then-passing regression. Live smoke exposed role-case normalization,
+  also reproduced and corrected with a regression.
+- Source-only saved 011 smoke used GPT-5.6 Luna/medium, without reconversion,
+  reclassification or human-label reads. Initial prompt completed after one
+  validation retry: estimated $0.0271718 and 42.24s provider latency. Revised
+  fee/period prompt produced two responses rejected for capitalized `Lender`:
+  estimated $0.0276144 and 57.69s. Both live histories remain intact.
+- After casing normalization, the second actual saved revised response was
+  revalidated offline with exact system/schema/evidence matching; no new request.
+  It yields six entities, one facility, monthly interest and annual/one-time fees.
+  Total observed estimated spend across the two live checks: $0.0547862; four
+  provider calls. Costs are dated gateway estimates, not invoices or accuracy scores.
+- Final readable result and offline provenance are under
+  `tmp/runs/stage-d-011-smoke-20261004/offline-revalidated/` and
+  `offline-revalidation-provenance.json`. All original source/map/chunk/canonical
+  artifacts verified byte-identical. Full extraction eval remains pending;
+  record-level citations and simple nonnegative rate policies are initial scope.
+- Pipeline D1/D3/D4 boxes are solid green; D2 is solid purple. C remains isolated,
+  B4/B5 remain shared retrieval tools. The HTML reviewer and Phoenix stay unchanged.
+
 
 ### B4/B5 retrieval and evidence packaging — 2026-10-03
 
