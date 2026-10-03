@@ -67,6 +67,11 @@ def build_topic_map_document(document, classifications):
             'unclassified_chunk_ids':[r['chunk_id'] for r in rows if not r['topics']]}
     if classifications.get('pipeline_layout', classifications.get('profile', {}).get('pipeline_layout')) == 'stage-b-v2':
         result['pipeline_layout'] = 'stage-b-v2'
+    if version == 2:
+        # Bind future retrieval to exact B1 content/metadata, independent of
+        # whitespace in the persisted JSON. Old maps can be rebuilt offline.
+        result['chunks_document_sha256'] = hashlib.sha256(
+            json.dumps(document, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     return result
 
 
