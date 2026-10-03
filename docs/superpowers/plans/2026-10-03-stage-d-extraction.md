@@ -90,7 +90,7 @@ Validate visible response with `json.loads(response.text)` and then the pure val
 - [x] Update existing Obsidian project/daily notes from Ashrit's perspective.
 - [x] Run full tests and `git diff --check`; scan staged files for exact local
   secret values and prohibited paths without printing credentials.
-- [ ] Verify scoped staged snapshot tests, commit on main and push origin/main;
+- [x] Verify scoped staged snapshot tests, commit on main and push origin/main;
   verify remote SHA matches. Preserve unrelated edits and all historical runs.
 
 ## Execution evidence — 2026-10-04
@@ -99,6 +99,8 @@ Baseline 318 tests; final full local suite 372, including 54 new focused tests.
 The exact scoped Git-index snapshot passes 352 tests; the 20-test difference
 is unrelated working-tree evaluation/annotation work excluded from this commit.
 All 14 staged files pass the local-secret/prohibited-path scan and whitespace check.
+Feature commit `0b64eeb` was pushed to `origin/main`; the local and remote-tracking
+SHAs matched after the successful push. Unrelated working changes remain unstaged.
 Independent review's five validation/telemetry findings each have red/green
 regressions. Additional live-discovered role casing and rate-period/fee distinctions
 are tested. B4/B5 source bindings, canonical table data and both A10 modes pass.
