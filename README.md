@@ -16,10 +16,10 @@ than inventing borrower or lender data.
 
 ```mermaid
 flowchart TD
-    Input["PDF / HTML / HTM"] --> A["A · Document conversion"]
-    A --> B["B · Topic mapping + evidence retrieval"]
-    B --> D["D · Extract and validate credit terms"]
-    D --> Output["Structured JSON + source evidence"]
+    Input["Credit agreement"] --> A["A · Read and prepare the agreement"]
+    A --> B["B · Organize clauses by topic"]
+    B --> D["D · Extract and check key agreement terms"]
+    D --> Output["Results with supporting evidence"]
 
     classDef implemented fill:#e8f5e9,stroke:#388e3c,color:#16351b;
     classDef cognitive fill:#ede9fe,stroke:#7c3aed,color:#352060;
@@ -34,30 +34,30 @@ See the [detailed pipeline](docs/conversion_pipeline.md) for individual steps.
 
 ## Proposed — for consideration
 
-### Definition-aware extraction
+### Use the agreement's definitions
 
-Not implemented or scope-frozen. Today, extraction receives mapped contract
-definition passages in its evidence bundle; it cannot look up individual terms
-on demand. This proposal adds relevant definitions upfront and bounded lookups
-when the extraction model needs more context. E numbering is provisional.
+For consideration — not yet built or finalized. Use the agreement's own
+definitions to interpret its terms: provide relevant definitions first, then
+look up more when needed. Today, definitions are included with the supporting
+passages, but additional lookups are not available. E labels are provisional.
 
 ```mermaid
 flowchart TD
-    B5["B5 · Original source passages"]
-    E1["E1 · LLM identifies defined terms<br/>and source item IDs"]
-    V["E1.1 · Python validates IDs<br/>and persists the definition index"]
-    E2["E2 · Python matches terms<br/>in retrieved topic passages"]
-    E3["E3 · Python looks up a named term"]
-    D2["D2 · Definition-aware LLM extraction"]
+    B5["B5 · Relevant agreement passages"]
+    E1["E1 · Identify the agreement's defined terms"]
+    V["E1.1 · Check and save definitions"]
+    E2["E2 · Find relevant definitions"]
+    E3["E3 · Look up additional definitions"]
+    D2["D2 · Extract terms using the definitions"]
 
-    B5 -. "Definition passages" .-> E1
+    B5 -. "Where terms are defined" .-> E1
     E1 -.-> V
     V -.-> E2
-    B5 -. "Topic passages" .-> E2
-    E2 -. "Evidence + matching definitions" .-> D2
+    B5 -. "Clauses being reviewed" .-> E2
+    E2 -. "Clauses and relevant definitions" .-> D2
     V -.-> E3
-    D2 -. "Request additional term" .-> E3
-    E3 -. "Original definition + citations, or not found" .-> D2
+    D2 -. "Need another definition?" .-> E3
+    E3 -. "Definition and source, or not found" .-> D2
 
     classDef implemented fill:#e8f5e9,stroke:#388e3c,color:#16351b;
     classDef pending fill:#f3f4f6,stroke:#6b7280,color:#222,stroke-dasharray:6 4;
@@ -67,12 +67,10 @@ flowchart TD
     class E1,D2 cognitivePending;
 ```
 
-Dashed boxes/arrows are proposed; purple boxes use Stage C. D2 already exists,
-but its definition-aware lookup behavior does not. E1 identifies terms and
-references, not rewritten definitions or assumed economic equivalences. Python
-retains original wording and citations; E2 initially uses literal matching.
-B4/B5 remain deterministic. Lookup rounds must be bounded and traced, with
-unresolved terms explicit rather than invented.
+Dashed lines show proposed work; purple boxes involve AI. Extraction already
+exists, but these definition lookups are new. Keep the agreement's original
+wording and supporting sources, limit repeat lookups, and flag missing
+definitions rather than guess their meaning.
 
 ## Current status
 
