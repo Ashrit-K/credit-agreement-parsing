@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Review extraction references</title>
+<style>
+:root{font:15px/1.5 system-ui;color:#17283b;background:#f1f4f8}*{box-sizing:border-box}body{margin:0}header{background:#14273f;color:white;padding:18px 26px}header h1{font-size:24px;margin:0}header p{margin:3px 0;color:#c9d7e8}nav{display:flex;align-items:center;gap:12px;padding:14px 24px;background:white;border-bottom:1px solid #d2dce8;flex-wrap:wrap}select,textarea,input,button{font:inherit}select,input,textarea{padding:9px;border:1px solid #adbcd0;border-radius:6px;background:white;color:#17283b}button,.button{padding:9px 15px;border:1px solid #a7b8cd;border-radius:6px;background:white;color:#173957;cursor:pointer;text-decoration:none;display:inline-block}button:hover{background:#e9f1fa}button:disabled{opacity:.5;cursor:wait}button.primary{background:#1463ac;border-color:#1463ac;color:white}select{max-width:100%}#document{max-width:360px}#fact{flex:1;min-width:200px}main{display:grid;grid-template-columns:minmax(300px,45%) minmax(400px,55%);gap:18px;padding:18px 24px}.panel{background:white;border:1px solid #d4deea;border-radius:10px;overflow:hidden}.panelhead{padding:14px 18px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:12px;flex-wrap:wrap}.panelhead h2{font-size:17px;margin:0}.content{padding:18px}#sourceImage{width:100%;display:block}#sourceFrame{width:100%;height:75vh;border:0}#preview{height:75vh;overflow:auto;background:#e3e9ef}label.block{display:block;margin:14px 0 6px;font-weight:600}textarea{width:100%;resize:vertical}#value{font:14px/1.5 ui-monospace,monospace;min-height:125px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f6fa;padding:14px;border-radius:6px;max-height:270px;overflow:auto;font:14px/1.5 ui-monospace,monospace}.muted{color:#607084;font-size:13px}.badge{font-size:12px;border-radius:20px;padding:3px 10px;background:#fff0cd;color:#815a08}#status{padding:10px 18px;background:#edf3fa;min-height:42px;white-space:pre-wrap}#status.error{background:#fff0ef;color:#9a2525}.choices{display:flex;flex-wrap:wrap;gap:8px}.choices label{padding:9px;border:1px solid #c4d2e3;border-radius:6px;cursor:pointer}.choices label:has(input:checked){background:#e4f1ff;border-color:#1463ac}details{margin:12px 0;border:1px solid #dae3ed;border-radius:6px;padding:12px}summary{cursor:pointer;color:#174e80}.quote{white-space:pre-wrap;font-family:Georgia,serif;line-height:1.6;overflow-wrap:anywhere}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}#fieldLabel{overflow-wrap:anywhere;font-size:19px;margin:8px 0}#notes{min-height:85px}#caution{border-left:3px solid #dda62d;padding-left:12px}#progress{margin-left:auto;font-size:14px}#loading{padding:24px}#missingFields[hidden],[hidden]{display:none!important}@media(max-width:850px){main{grid-template-columns:1fr;padding:10px}#preview{height:40vh}#sourceFrame{height:40vh}nav{padding:10px}header{padding:15px}}
+</style></head>
+<body>
+<header><h1>Review extraction references</h1><p>Read the evidence → decide → save. Your reviews stay separate from model inputs.</p></header>
+<nav><label for="document">Agreement</label><select id="document" disabled></select><span id="progress"></span><a class="button" href="/api/export" target="_blank">Export saved reviews</a></nav>
+<nav><button id="previous" disabled>← Previous</button><select id="fact" aria-label="Fact" disabled></select><button id="next" disabled>Next →</button><button id="add" disabled>+ Add missing fact</button></nav>
+<p id="loading">Loading saved draft and reviews…</p>
+<main id="main" hidden>
+<section class="panel"><div class="panelhead"><h2>Original source</h2><label for="page">PDF page</label><input id="page" type="number" min="1" max="10000" style="width:80px"><button id="showPage">Show</button><a id="sourceLink" target="_blank" rel="noopener">Open original</a></div><div id="preview"><img id="sourceImage" alt="Selected original PDF page"><iframe id="sourceFrame" title="Original HTML document" sandbox="" hidden></iframe></div></section>
+<section class="panel"><div class="panelhead"><code id="factId"></code><span class="badge" id="savedState"></span></div><div id="status" role="status" aria-live="polite"></div><div class="content">
+<h2 id="fieldLabel"></h2><p id="caution" hidden></p>
+<div id="proposal"><strong>Original AI proposal (unchanged)</strong><pre id="original"></pre></div>
+<div id="evidence"></div>
+<div id="missingFields" hidden><label class="block" for="field">Field name</label><input id="field" style="width:100%" placeholder="e.g. interest.payment_frequency"><label class="block" for="quote">Source quote</label><textarea id="quote" rows="4"></textarea><label class="block" for="evidencePages">PDF page(s), comma-separated</label><input id="evidencePages" placeholder="e.g. 19, 20"><label class="block" for="locator">Source item / section locator</label><input id="locator" style="width:100%" placeholder="e.g. #/texts/22 or Clause 2.7 (required for HTML)"></div>
+<label class="block">Your decision</label><div class="choices">
+<label><input type="radio" name="decision" value="approved"> Approve original</label>
+<label><input type="radio" name="decision" value="edited"> Edit & approve</label>
+<label><input type="radio" name="decision" value="rejected"> Reject</label>
+<label><input type="radio" name="decision" value="skipped"> Unsure / skip</label>
+</div>
+<div id="editArea" hidden><label class="block" for="value">Correct value (JSON)</label><textarea id="value" spellcheck="false"></textarea><p class="muted">Text needs quotes: "Monthly in arrears". Use numbers, objects or lists as needed. Rates are fractions: 0.015 = 1.5%. Null means unresolved, not zero.</p></div>
+<label class="block" for="notes">Review notes</label><textarea id="notes" placeholder="Corrections, conditions, reasons or remaining uncertainty…"></textarea>
+<div class="actions"><button class="primary" id="save">Save review</button><button class="primary" id="saveNext">Save & next →</button><button id="reload">Reload saved version</button></div>
+<p class="muted">Approvals are stored for future reference promotion. No benchmark is run and no data is sent to a model. Reject/skip do not approve a reference value.</p>
+<details id="historyPanel"><summary>Saved review history</summary><pre id="history">No history loaded.</pre></details>
+</div></section></main>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+let state, doc, facts=[], index=0, dirty=false, saving=false, manual=null;
+const pretty=value=>JSON.stringify(value,null,2);
+function message(text,error=false){$('status').textContent=text;$('status').classList.toggle('error',error);}
+function changed(){dirty=true;message('Unsaved changes — click Save review or Save & next.');}
+function safeToLeave(){return !dirty||window.confirm('You have unsaved edits. Discard them and continue?');}
+function current(){return manual||facts[index];}
+function decision(){return document.querySelector('input[name=decision]:checked')?.value;}
+async function api(path,options={}){const r=await fetch(path,options);const data=await r.json();if(!r.ok)throw new Error(data.error||'Request failed');return data;}
+function buildFacts(){facts=[...doc.facts,...Object.values(state.decisions).filter(r=>r.document_id===doc.document_id&&r.is_added).map(r=>({fact_id:r.fact_id,field:r.field,proposed_value:r.value,evidence:r.evidence,is_added:true}))];}
+function renderOptions(){
+ $('fact').replaceChildren();facts.forEach((f,i)=>{const opt=document.createElement('option');const r=state.decisions[f.fact_id];opt.value=i;opt.textContent=`${i+1}. ${f.field} · ${r?.decision||'unreviewed'}`;$('fact').append(opt);});$('fact').value=index;
+ const reviews=Object.values(state.decisions).filter(r=>r.document_id===doc.document_id);const approved=reviews.filter(r=>r.approved_for_reference).length;
+ $('progress').textContent=`${reviews.length}/${facts.length} saved · ${approved} approved · ${reviews.filter(r=>r.decision==='skipped').length} unsure`;
+}
+function preview(page){
+ const source='/source?document='+encodeURIComponent(doc.document_id);const pdf=doc.source_path.toLowerCase().endsWith('.pdf');
+ $('sourceLink').href=source+(pdf?'#page='+page:'');$('page').hidden=$('showPage').hidden=!pdf;document.querySelector('label[for=page]').hidden=!pdf;
+ $('sourceImage').hidden=!pdf;$('sourceFrame').hidden=pdf;
+ if(pdf){$('page').value=page;$('sourceImage').src='/source-page?document='+encodeURIComponent(doc.document_id)+'&page='+page;}
+ else if($('sourceFrame').getAttribute('src')!==source){$('sourceFrame').src=source;}
+}
+function editorVisibility(){ $('editArea').hidden=!(manual||current()?.is_added||decision()==='edited'); }
+function show(){
+ const f=current();const r=state.decisions[f.fact_id];dirty=false;
+ $('factId').textContent=f.fact_id;$('savedState').textContent=r?`${r.decision} · revision ${r.revision}`:'Not reviewed';
+ $('fieldLabel').textContent=f.field||'Add a missing fact';$('proposal').hidden=!!(manual||f.is_added);$('original').textContent=pretty(f.proposed_value);
+ $('caution').textContent=f.normalization_or_caution||'';$('caution').hidden=!f.normalization_or_caution;
+ $('missingFields').hidden=!(manual||f.is_added);$('field').value=f.field||'';
+ $('quote').value=f.is_added?r?.evidence[0]?.source_text||'':'';
+ $('evidencePages').value=f.is_added?(r?.evidence[0]?.pdf_pages||[]).join(', '):'';
+ $('locator').value=f.is_added?r?.evidence[0]?.item_id||'':'';
+ $('value').value=pretty(r?r.value:(f.proposed_value??null));$('notes').value=r?.notes||'';
+ document.querySelectorAll('input[name=decision]').forEach(el=>el.checked=el.value===(r?.decision||(manual?'edited':null)));
+ $('evidence').replaceChildren();
+ for(const ev of f.evidence||[]){
+  const detail=document.createElement('details');detail.open=true;const summary=document.createElement('summary');summary.textContent=`Source evidence · ${ev.pdf_pages?.length?'PDF p. '+ev.pdf_pages.join(', '):'HTML / section'} · ${ev.item_id||'direct PDF text'}`;
+  detail.append(summary);const p=document.createElement('p');p.className='quote';p.textContent=ev.source_text;detail.append(p);
+  for(const page of ev.pdf_pages||[]){const b=document.createElement('button');b.textContent='Show page '+page;b.onclick=()=>preview(page);detail.append(b);}
+  $('evidence').append(detail);
+ }
+ preview(f.evidence?.find(e=>e.pdf_pages?.length)?.pdf_pages[0]||1);
+ $('historyPanel').open=false;$('history').textContent='Expand to load saved history.';
+ $('previous').disabled=!!manual||index===0;$('next').disabled=!!manual;
+ editorVisibility();message(r?`Saved ${new Date(r.updated_at).toLocaleString()}. You can revise this decision; earlier versions are kept.`:'Choose a decision, then save. Nothing is approved automatically.');
+}
+function selectDocument(id){doc=state.draft.documents.find(d=>d.document_id===id);manual=null;index=0;buildFacts();renderOptions();show();}
+function advance(){
+ if(index+1<facts.length){index++;$('fact').value=index;show();return;}
+ const docs=state.draft.documents;const next=docs.indexOf(doc)+1;
+ if(next<docs.length){$('document').value=docs[next].document_id;selectDocument(docs[next].document_id);}
+ else message('End of the review queue. Remaining unreviewed/unsure facts still need attention.');
+}
+async function save(andNext){
+ if(saving)return;const f=current();const selected=decision();if(!selected){message('Choose Approve, Edit & approve, Reject or Unsure before saving.',true);return;}
+ const payload={draft_sha256:state.draft_sha256,document_id:doc.document_id,fact_id:f.fact_id,revision:state.decisions[f.fact_id]?.revision||0,decision:selected,notes:$('notes').value};
+ try{
+  if(selected==='edited'||manual||f.is_added)payload.value=JSON.parse($('value').value);
+  if(manual||f.is_added){payload.field=$('field').value.trim();payload.evidence=[{source_text:$('quote').value,pdf_pages:$('evidencePages').value.trim()?$('evidencePages').value.split(',').map(s=>Number(s.trim())):[],item_id:$('locator').value.trim()||null}];}
+ }catch{message('The value is not valid JSON. Text must be in double quotes. Your edits have not been saved.',true);return;}
+ saving=true;document.querySelectorAll('button,select,input,textarea').forEach(e=>e.disabled=true);message('Saving to disk…');
+ try{
+  const data=await api('/api/review',{method:'POST',headers:{'Content-Type':'application/json','X-Review-Token':state.token},body:JSON.stringify(payload)});
+  state.decisions[f.fact_id]=data.review;dirty=false;manual=null;buildFacts();index=facts.findIndex(x=>x.fact_id===f.fact_id);renderOptions();show();
+  message('Saved to disk. '+data.review.decision+' · revision '+data.review.revision);
+  if(andNext)advance();
+ }catch(error){message(error.message+' Your edits remain on this page; nothing was advanced.',true);}
+ finally{saving=false;document.querySelectorAll('button,select,input,textarea').forEach(e=>e.disabled=false);$('previous').disabled=!!manual||index===0;$('next').disabled=!!manual;}
+}
+$('save').onclick=()=>save(false);$('saveNext').onclick=()=>save(true);
+$('document').onchange=e=>{if(!safeToLeave()){e.target.value=doc.document_id;return;}selectDocument(e.target.value);};
+$('fact').onchange=e=>{if(!safeToLeave()){e.target.value=index;return;}manual=null;index=Number(e.target.value);show();};
+$('previous').onclick=()=>{if(safeToLeave()){index=Math.max(0,index-1);$('fact').value=index;show();}};
+$('next').onclick=()=>{if(safeToLeave())advance();};
+$('add').onclick=()=>{if(!safeToLeave())return;manual={fact_id:'manual-'+crypto.randomUUID(),field:'',proposed_value:null,evidence:[]};show();changed();};
+$('reload').onclick=async()=>{if(!safeToLeave())return;try{const id=doc.document_id;const factId=current().fact_id;state=await api('/api/state');doc=state.draft.documents.find(d=>d.document_id===id);manual=null;buildFacts();index=Math.max(0,facts.findIndex(f=>f.fact_id===factId));renderOptions();show();}catch(e){message(e.message,true);}};
+$('showPage').onclick=()=>{const p=Number($('page').value);if(Number.isInteger(p)&&p>0&&p<=10000)preview(p);else message('Enter a positive PDF page number.',true);};
+document.querySelectorAll('input[name=decision]').forEach(el=>el.onchange=()=>{editorVisibility();changed();});
+for(const id of ['value','notes','field','quote','evidencePages','locator'])$(id).oninput=changed;
+$('historyPanel').ontoggle=async()=>{if(!$('historyPanel').open)return;try{$('history').textContent=pretty(await api('/api/history?fact='+encodeURIComponent(current().fact_id)));}catch(e){$('history').textContent=e.message;}};
+window.addEventListener('beforeunload',e=>{if(dirty||saving){e.preventDefault();e.returnValue='';}});
+(async()=>{try{state=await api('/api/state');for(const d of state.draft.documents){const o=document.createElement('option');o.value=d.document_id;o.textContent=d.document_id+' — '+d.source_path.split('/').pop();$('document').append(o);}selectDocument(state.draft.documents[0].document_id);$('document').disabled=$('fact').disabled=$('add').disabled=false;$('loading').hidden=true;$('main').hidden=false;}catch(e){$('loading').textContent='Unable to load reviews: '+e.message;}})();
+</script></body></html>

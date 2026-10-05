@@ -88,6 +88,20 @@ The HTML reviewer and local workbench render Stage D results with original cited
 
 Design and build steps: [Stage D plan](docs/superpowers/plans/2026-10-03-stage-d-extraction.md).
 
+An [AI-assisted extraction reference](docs/extraction_reference_drafts.md) now
+contains 97 unreviewed proposed facts across all eight golden documents, with
+source evidence and a persistent local human-review app. It is a partial first
+pass, not approved gold or an extraction-accuracy result. Human review and
+scoring remain pending; these files never feed model/pipeline inputs. Existing
+annotations were backed up and verified unchanged.
+
+Launch extraction review with
+`uv run --no-sync python -m credit_agreement_extractor.extraction_review --port 60902`
+and open http://127.0.0.1:60902/. Approve, edit, reject, mark unsure, add notes or
+missing facts, and save/advance. Decisions retain revision history in a separate
+ignored SQLite store; the original AI draft stays immutable. Export is for offline
+evaluation only, never a pipeline input. The old static HTML is read-only history.
+
 ## Local pipeline workbench
 
 ```bash

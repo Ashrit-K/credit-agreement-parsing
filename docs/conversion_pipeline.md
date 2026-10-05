@@ -327,6 +327,13 @@ Free-text formulas are never executed. Completed output and provenance manifest
 persist in unique execution directories under `tmp/stage_d/<source-sha256>/`;
 manifest-last completion and debug traces preserve errors and historical results.
 
+Offline extraction-reference review is implemented separately at port 60902
+(`extraction_review.py` / `extraction_review.html`): source preview, approve/edit,
+reject/unsure, notes, missing facts and persistent revision history. It reads the
+immutable AI draft, not live predictions; human decisions stay in ignored ground
+truth storage and never enter A/B/C/D inputs. Reference promotion and extraction
+accuracy scoring remain pending. See [review instructions](extraction_reference_drafts.md).
+
 The historical pending sleeve view and later abstract D1 are superseded by initial
 D1–D4 below. More specialists and broader extraction/evaluations remain later work.
 See the [design](superpowers/specs/2026-10-03-stage-d-extraction-design.md) and
