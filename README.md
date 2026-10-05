@@ -16,27 +16,63 @@ than inventing borrower or lender data.
 
 ```mermaid
 flowchart TD
-    Input["PDF / HTML / HTM"] --> A["A · Convert with Docling<br/>Canonical JSON + Markdown + manifest<br/>Optional hierarchy sidecar — default on"]
-    A --> B1["B1 · Package source chunks<br/>Page-first for PDFs; retain source IDs"]
-    B1 --> B2["B2 · LLM classifies passages<br/>Approved topics + evidence/context IDs"]
-    B2 --> B3["B3 · Build topic-to-passage map"]
-    B3 --> D1["D1 · Python coordinates extraction"]
-    D1 --> Retrieval["B4 / B5 · Retrieve and package evidence<br/>Original passages + source provenance"]
-    Retrieval --> D2["D2 · One combined LLM extraction<br/>Parties · Facility amounts · Interest / fees"]
-    D2 --> D3["D3 · Validate schema, citations,<br/>references and numeric calculations"]
-    D3 --> D4["D4 · Save structured JSON<br/>Source evidence + provenance manifest"]
+    Input["PDF / HTML / HTM"] --> A["A · Document conversion"]
+    A --> B["B · Topic mapping + evidence retrieval"]
+    B --> D["D · Extract and validate credit terms"]
+    D --> Output["Structured JSON + source evidence"]
 
     classDef implemented fill:#e8f5e9,stroke:#388e3c,color:#16351b;
     classDef cognitive fill:#ede9fe,stroke:#7c3aed,color:#352060;
-    class Input,A,B1,B3,D1,Retrieval,D3,D4 implemented;
-    class B2,D2 cognitive;
+    class Input,A,Output implemented;
+    class B,D cognitive;
 ```
 
-Solid boxes/arrows show implemented flow; purple boxes make LLM calls through
-the shared **Stage C** transport. Stage C is cross-cutting, not a processing
-step. B4/B5 run when extraction requests evidence from the completed topic map.
-Basic telemetry accompanies every stage; debug mode saves intermediate inputs
-and outputs for inspection. Validation does not establish legal accuracy.
+Solid lines show implemented flow; purple stages contain LLM calls using the
+shared **Stage C** interface. Extraction covers parties, facility amounts and
+interest/fees. Every stage records traces; debug mode saves inputs and outputs.
+See the [detailed pipeline](docs/conversion_pipeline.md) for individual steps.
+
+## Proposed — for consideration
+
+### Definition-aware extraction
+
+Not implemented or scope-frozen. Today, extraction receives mapped contract
+definition passages in its evidence bundle; it cannot look up individual terms
+on demand. This proposal adds relevant definitions upfront and bounded lookups
+when the extraction model needs more context. E numbering is provisional.
+
+```mermaid
+flowchart TD
+    B5["B5 · Original source passages"]
+    E1["E1 · LLM identifies defined terms<br/>and source item IDs"]
+    V["E1.1 · Python validates IDs<br/>and persists the definition index"]
+    E2["E2 · Python matches terms<br/>in retrieved topic passages"]
+    E3["E3 · Python looks up a named term"]
+    D2["D2 · Definition-aware LLM extraction"]
+
+    B5 -. "Definition passages" .-> E1
+    E1 -.-> V
+    V -.-> E2
+    B5 -. "Topic passages" .-> E2
+    E2 -. "Evidence + matching definitions" .-> D2
+    V -.-> E3
+    D2 -. "Request additional term" .-> E3
+    E3 -. "Original definition + citations, or not found" .-> D2
+
+    classDef implemented fill:#e8f5e9,stroke:#388e3c,color:#16351b;
+    classDef pending fill:#f3f4f6,stroke:#6b7280,color:#222,stroke-dasharray:6 4;
+    classDef cognitivePending fill:#ede9fe,stroke:#7c3aed,color:#352060,stroke-dasharray:6 4;
+    class B5 implemented;
+    class V,E2,E3 pending;
+    class E1,D2 cognitivePending;
+```
+
+Dashed boxes/arrows are proposed; purple boxes use Stage C. D2 already exists,
+but its definition-aware lookup behavior does not. E1 identifies terms and
+references, not rewritten definitions or assumed economic equivalences. Python
+retains original wording and citations; E2 initially uses literal matching.
+B4/B5 remain deterministic. Lookup rounds must be bounded and traced, with
+unresolved terms explicit rather than invented.
 
 ## Current status
 
