@@ -12,6 +12,32 @@ requires human-reviewed extraction evaluations. The legacy
 `extract_parties()` function intentionally returns `not_implemented` rather
 than inventing borrower or lender data.
 
+## Pipeline at a glance
+
+```mermaid
+flowchart TD
+    Input["PDF / HTML / HTM"] --> A["A · Convert with Docling<br/>Canonical JSON + Markdown + manifest<br/>Optional hierarchy sidecar — default on"]
+    A --> B1["B1 · Package source chunks<br/>Page-first for PDFs; retain source IDs"]
+    B1 --> B2["B2 · LLM classifies passages<br/>Approved topics + evidence/context IDs"]
+    B2 --> B3["B3 · Build topic-to-passage map"]
+    B3 --> D1["D1 · Python coordinates extraction"]
+    D1 --> Retrieval["B4 / B5 · Retrieve and package evidence<br/>Original passages + source provenance"]
+    Retrieval --> D2["D2 · One combined LLM extraction<br/>Parties · Facility amounts · Interest / fees"]
+    D2 --> D3["D3 · Validate schema, citations,<br/>references and numeric calculations"]
+    D3 --> D4["D4 · Save structured JSON<br/>Source evidence + provenance manifest"]
+
+    classDef implemented fill:#e8f5e9,stroke:#388e3c,color:#16351b;
+    classDef cognitive fill:#ede9fe,stroke:#7c3aed,color:#352060;
+    class Input,A,B1,B3,D1,Retrieval,D3,D4 implemented;
+    class B2,D2 cognitive;
+```
+
+Solid boxes/arrows show implemented flow; purple boxes make LLM calls through
+the shared **Stage C** transport. Stage C is cross-cutting, not a processing
+step. B4/B5 run when extraction requests evidence from the completed topic map.
+Basic telemetry accompanies every stage; debug mode saves intermediate inputs
+and outputs for inspection. Validation does not establish legal accuracy.
+
 ## Current status
 
 | Area | Status |
